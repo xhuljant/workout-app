@@ -1,0 +1,6 @@
+# Keep these out of the Docker build to make it faster and cleaner.
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/

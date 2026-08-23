@@ -1,0 +1,11 @@
+# Backend dependencies. Versions are left flexible for now; once everything works
+# you can "pin" them (e.g. run `pip freeze`) so builds are perfectly reproducible.
+
+fastapi                 # the web framework
+uvicorn[standard]       # the server that runs the FastAPI app
+sqlalchemy              # talks to the database using Python objects
+psycopg2-binary         # the PostgreSQL driver SQLAlchemy uses
+pydantic-settings       # loads/validates config from environment variables
+email-validator         # required for Pydantic's EmailStr type
+argon2-cffi             # argon2 password hashing
+pyjwt                   # creates and verifies JWT login tokens

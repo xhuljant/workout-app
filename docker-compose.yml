@@ -1,0 +1,42 @@
+# docker-compose for the workout app -- milestone 1 (login + auth only).
+#
+# Start everything with:   docker compose up --build
+# Stop with Ctrl-C, then:  docker compose down   (add -v to also wipe the database)
+
+services:
+  # --- PostgreSQL database ---
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      # A named volume keeps your data even when containers are rebuilt/removed.
+      - workout_db_data:/var/lib/postgresql/data
+    healthcheck:
+      # The api service waits until this reports "healthy" before it starts.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # --- FastAPI backend (also serves the login page for now) ---
+  api:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      # Assembled from the Postgres values above. "db" is the hostname of the
+      # database container on the internal docker network.
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+    ports:
+      # host:container -> open http://localhost:8000 in your browser.
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  workout_db_data:

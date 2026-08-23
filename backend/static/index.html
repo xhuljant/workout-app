@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Workout Log</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <main class="card">
+    <!-- Wordmark -->
+    <header class="brand">
+      <span class="brand-mark" aria-hidden="true">&#9626;</span>
+      <h1 class="brand-name">Workout Log</h1>
+    </header>
+
+    <!-- Switch between logging in and creating an account -->
+    <div class="tabs" role="tablist" aria-label="Authentication mode">
+      <button id="tab-login" class="tab is-active" type="button" role="tab">Log in</button>
+      <button id="tab-register" class="tab" type="button" role="tab">Create account</button>
+    </div>
+
+    <!-- One form reused for both modes. The name row only shows when registering. -->
+    <form id="auth-form" novalidate>
+      <div class="field" id="name-field" hidden>
+        <label for="display_name">Name</label>
+        <input id="display_name" name="display_name" type="text" autocomplete="name" />
+      </div>
+
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email" required />
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password"
+               autocomplete="current-password" required minlength="8" />
+      </div>
+
+      <p id="message" class="message" role="alert" aria-live="polite"></p>
+
+      <button id="submit" class="submit" type="submit">Log in</button>
+    </form>
+
+    <!-- Shown only after a successful login, to prove the whole round-trip works. -->
+    <section id="welcome" class="welcome" hidden>
+      <p class="welcome-text">Signed in as <strong id="who"></strong></p>
+      <button id="logout" class="ghost" type="button">Log out</button>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# Never commit real secrets or local junk.
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
