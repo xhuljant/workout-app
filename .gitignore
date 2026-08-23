@@ -5,3 +5,15 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Editors & IDEs
+.vscode/
+.idea/
