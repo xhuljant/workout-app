@@ -43,10 +43,27 @@
       <button id="submit" class="submit" type="submit">Log in</button>
     </form>
 
-    <!-- Shown only after a successful login, to prove the whole round-trip works. -->
-    <section id="welcome" class="welcome" hidden>
-      <p class="welcome-text">Signed in as <strong id="who"></strong></p>
-      <button id="logout" class="ghost" type="button">Log out</button>
+    <!-- The home screen: shown after a successful login. -->
+    <section id="home" class="home" hidden>
+      <div class="home-head">
+        <p class="home-greeting">Hi, <strong id="who"></strong></p>
+        <button id="logout" class="ghost" type="button">Log out</button>
+      </div>
+
+      <button id="start-empty" class="action action--wide" type="button">Start empty workout</button>
+
+      <div class="action-row">
+        <button id="new-routine" class="action" type="button">New Routine</button>
+        <button id="exercises" class="action" type="button">Exercises</button>
+      </div>
+
+      <!-- One button per routine, filled in by app.js. -->
+      <div id="routine-list" class="routine-list"></div>
+
+      <!-- Shown instead of the list while the user has no routines yet. -->
+      <p id="routine-empty" class="routine-empty" hidden>
+        No routines yet. Create a custom routine to get started.
+      </p>
     </section>
   </main>
 

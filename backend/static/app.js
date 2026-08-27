@@ -34,10 +34,17 @@ const nameField = document.getElementById("name-field");
 const form = document.getElementById("auth-form");
 const submitBtn = document.getElementById("submit");
 const messageEl = document.getElementById("message");
-const welcome = document.getElementById("welcome");
+const home = document.getElementById("home");
 const whoEl = document.getElementById("who");
 const logoutBtn = document.getElementById("logout");
 const passwordInput = document.getElementById("password");
+const routineList = document.getElementById("routine-list");
+const routineEmpty = document.getElementById("routine-empty");
+
+// The user's routines. Empty for now -- nothing creates routines yet. When a
+// routines source is added later, fill this array and renderRoutines() shows a
+// button per routine with no other change.
+const routines = [];
 
 // Current mode: "login" or "register".
 let mode = "login";
@@ -130,14 +137,34 @@ async function loadProfile() {
 function showLoggedIn(user) {
   form.hidden = true;
   tabsEl.hidden = true;
-  welcome.hidden = false;
-  whoEl.textContent = `${user.display_name} (${user.email})`;
+  home.hidden = false;
+  whoEl.textContent = user.display_name;
+  renderRoutines();
 }
 
 function showLoggedOut() {
   form.hidden = false;
   tabsEl.hidden = false;
-  welcome.hidden = true;
+  home.hidden = true;
+}
+
+// Show a button per routine, or a "create one" message when there are none.
+function renderRoutines() {
+  routineList.replaceChildren();
+
+  if (routines.length === 0) {
+    routineEmpty.hidden = false;
+    return;
+  }
+
+  routineEmpty.hidden = true;
+  for (const name of routines) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "action routine";
+    btn.textContent = name;
+    routineList.append(btn);
+  }
 }
 
 logoutBtn.addEventListener("click", () => {
