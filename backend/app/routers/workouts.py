@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import get_current_user
-from ..models import User, Workout
-from ..schemas import WorkoutPublic, WorkoutUpdate
+from ..models import Routine, User, Workout
+from ..schemas import WorkoutPublic, WorkoutStart, WorkoutUpdate
 
 router = APIRouter(prefix="/api/workouts", tags=["workouts"])
 
@@ -42,18 +42,59 @@ def _require_active(db: Session, user: User) -> Workout:
     return workout
 
 
+def _content_from_routine(routine: Routine) -> dict:
+    """Turn a routine template into a fresh workout body: every set starts
+    un-done, and each exercise gets an empty notes field."""
+    exercises = []
+    for entry in routine.content.get("exercises", []):
+        exercises.append(
+            {
+                "exercise_id": entry.get("exercise_id"),
+                "name": entry.get("name", ""),
+                "notes": "",
+                "sets": [
+                    {"weight": s.get("weight"), "reps": s.get("reps"), "done": False}
+                    for s in entry.get("sets", [])
+                ],
+            }
+        )
+    return {"exercises": exercises}
+
+
 @router.post("", response_model=WorkoutPublic, status_code=status.HTTP_201_CREATED)
 def start_workout(
+    body: WorkoutStart | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Start an empty workout. Idempotent: if one is already in progress, return
-    that one instead of creating a second."""
+    """Start a workout. Idempotent: if one is already in progress, return that one
+    instead of creating a second. If `routine_id` is given, the new workout is
+    pre-filled from that routine."""
     existing = _active_workout(db, current_user)
     if existing is not None:
         return existing
 
-    workout = Workout(user_id=current_user.id, content={"exercises": []})
+    routine_id = body.routine_id if body else None
+    content = {"exercises": []}
+    if routine_id is not None:
+        routine = (
+            db.query(Routine)
+            .filter(
+                Routine.id == routine_id,
+                Routine.user_id == current_user.id,
+                Routine.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if routine is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Routine not found."
+            )
+        content = _content_from_routine(routine)
+
+    workout = Workout(
+        user_id=current_user.id, routine_id=routine_id, content=content
+    )
     db.add(workout)
     db.commit()
     db.refresh(workout)

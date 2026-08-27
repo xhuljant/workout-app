@@ -140,6 +140,31 @@
         <button id="workout-discard" class="ghost workout-discard" type="button">Discard Workout</button>
       </div>
     </section>
+
+    <!-- Routine editor: opened from "New Routine" or a routine's ⋮ menu. -->
+    <section id="routine-view" class="subview" hidden>
+      <div class="subview-head">
+        <button id="routine-back" class="ghost" type="button" aria-label="Back to home">&larr;</button>
+        <h2 id="routine-title" class="subview-title">New Routine</h2>
+      </div>
+
+      <div class="field">
+        <label for="routine-name">Routine name</label>
+        <input id="routine-name" type="text" autocomplete="off" />
+      </div>
+
+      <div id="routine-exercises" class="workout-exercises"></div>
+      <p id="routine-empty-msg" class="routine-empty" hidden>
+        No exercises yet. Add one to build the routine.
+      </p>
+
+      <button id="routine-add-exercise" class="action action--wide" type="button">+ Add Exercise</button>
+
+      <div class="workout-actions">
+        <button id="routine-save" class="submit" type="button">Save</button>
+        <button id="routine-delete" class="ghost workout-discard" type="button">Delete Routine</button>
+      </div>
+    </section>
   </main>
 
   <script src="/app.js"></script>

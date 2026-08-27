@@ -66,10 +66,20 @@ const workoutAddExerciseBtn = document.getElementById("workout-add-exercise");
 const workoutFinishBtn = document.getElementById("workout-finish");
 const workoutDiscardBtn = document.getElementById("workout-discard");
 
-// The user's routines. Empty for now -- nothing creates routines yet. When a
-// routines source is added later, fill this array and renderRoutines() shows a
-// button per routine with no other change.
-const routines = [];
+// Routine editor sub-view
+const newRoutineBtn = document.getElementById("new-routine");
+const routineView = document.getElementById("routine-view");
+const routineTitleEl = document.getElementById("routine-title");
+const routineBackBtn = document.getElementById("routine-back");
+const routineNameInput = document.getElementById("routine-name");
+const routineExercisesEl = document.getElementById("routine-exercises");
+const routineEmptyMsg = document.getElementById("routine-empty-msg");
+const routineAddExerciseBtn = document.getElementById("routine-add-exercise");
+const routineSaveBtn = document.getElementById("routine-save");
+const routineDeleteBtn = document.getElementById("routine-delete");
+
+// The user's routines, loaded from the backend after login.
+let routines = [];
 
 // Current mode: "login" or "register".
 let mode = "login";
@@ -164,9 +174,10 @@ function showLoggedIn(user) {
   tabsEl.hidden = true;
   exercisesView.hidden = true;   // always land on the home screen
   workoutView.hidden = true;
+  routineView.hidden = true;
   home.hidden = false;
   whoEl.textContent = user.display_name;
-  renderRoutines();
+  loadRoutines();
   loadActiveWorkout();
 }
 
@@ -176,27 +187,53 @@ function showLoggedOut() {
   home.hidden = true;
   exercisesView.hidden = true;
   workoutView.hidden = true;
+  routineView.hidden = true;
   stopDurationTimer();
   activeWorkout = null;
 }
 
-// Show a button per routine, or a "create one" message when there are none.
+// One row per routine: tap the name to start a workout from it, ▲/▼ to reorder,
+// ⋮ to open the editor. A "create one" message shows when there are none.
 function renderRoutines() {
   routineList.replaceChildren();
+  routineEmpty.hidden = routines.length > 0;
 
-  if (routines.length === 0) {
-    routineEmpty.hidden = false;
-    return;
-  }
+  routines.forEach((routine, i) => {
+    const row = document.createElement("div");
+    row.className = "routine-row";
 
-  routineEmpty.hidden = true;
-  for (const name of routines) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "action routine";
-    btn.textContent = name;
-    routineList.append(btn);
-  }
+    const nameBtn = document.createElement("button");
+    nameBtn.type = "button";
+    nameBtn.className = "routine-name-btn";
+    nameBtn.textContent = routine.name;
+    nameBtn.addEventListener("click", () => startRoutine(routine));
+
+    const up = document.createElement("button");
+    up.type = "button";
+    up.className = "routine-move";
+    up.textContent = "▲";
+    up.setAttribute("aria-label", "Move up");
+    up.disabled = i === 0;
+    up.addEventListener("click", () => moveRoutine(i, -1));
+
+    const down = document.createElement("button");
+    down.type = "button";
+    down.className = "routine-move";
+    down.textContent = "▼";
+    down.setAttribute("aria-label", "Move down");
+    down.disabled = i === routines.length - 1;
+    down.addEventListener("click", () => moveRoutine(i, 1));
+
+    const menu = document.createElement("button");
+    menu.type = "button";
+    menu.className = "routine-menu";
+    menu.textContent = "⋮";
+    menu.setAttribute("aria-label", "Edit routine");
+    menu.addEventListener("click", () => openRoutineEditor(routine));
+
+    row.append(nameBtn, up, down, menu);
+    routineList.append(row);
+  });
 }
 
 logoutBtn.addEventListener("click", () => {
@@ -236,6 +273,7 @@ function openExercises({ onPick = null, returnTo = home } = {}) {
   exercisesReturnTo = returnTo;
   home.hidden = true;
   workoutView.hidden = true;
+  routineView.hidden = true;
   exercisesView.hidden = false;
   loadExercises(exerciseSearch.value.trim());
 }
@@ -711,6 +749,7 @@ workoutFinishBtn.addEventListener("click", async () => {
   workoutFinishBtn.disabled = true;
   try {
     await saveWorkout();     // persist the latest edits first
+    await maybeSyncRoutineFromWorkout();
     const res = await authFetch(WORKOUTS_API + "/active/finish", { method: "POST" });
     if (!res.ok) return;
     endWorkoutUI();
@@ -720,6 +759,37 @@ workoutFinishBtn.addEventListener("click", async () => {
     workoutFinishBtn.disabled = false;
   }
 });
+
+// If this workout came from a routine, offer to fold the (possibly changed)
+// exercise list back into that routine.
+async function maybeSyncRoutineFromWorkout() {
+  const routineId = activeWorkout && activeWorkout.routine_id;
+  if (!routineId) return;
+
+  const routine = routines.find((r) => r.id === routineId);
+  if (!routine) return;   // routine was deleted meanwhile
+
+  if (!confirm(`Save these changes to routine "${routine.name}"?`)) return;
+
+  const content = {
+    exercises: activeWorkout.content.exercises.map((entry) => ({
+      exercise_id: entry.exercise_id ?? null,
+      name: entry.name,
+      sets: entry.sets.map((s) => ({ weight: s.weight ?? null, reps: s.reps ?? null })),
+    })),
+  };
+
+  try {
+    await authFetch(`${ROUTINES_API}/${routineId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: routine.name, content }),
+    });
+    await loadRoutines();
+  } catch (err) {
+    /* non-fatal -- the workout still finishes */
+  }
+}
 
 workoutDiscardBtn.addEventListener("click", async () => {
   if (!confirm("Discard this workout? This can't be undone.")) return;
@@ -745,6 +815,271 @@ function endWorkoutUI() {
   home.hidden = false;
   refreshStartButton();
 }
+
+// --- Routines ----------------------------------------------------------
+const ROUTINES_API = "/api/routines";
+
+// The routine currently open in the editor: { id?, name, content }. A deep copy,
+// so nothing is saved until the Save button. originalRoutineJSON is the snapshot
+// we compare against to detect unsaved changes.
+let editingRoutine = null;
+let originalRoutineJSON = "";
+
+async function loadRoutines() {
+  try {
+    const res = await authFetch(ROUTINES_API);
+    routines = res.ok ? await res.json() : [];
+  } catch (err) {
+    routines = [];
+  }
+  renderRoutines();
+}
+
+// Move the routine at index i by dir (-1 up, +1 down) and persist the new order.
+async function moveRoutine(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= routines.length) return;
+  [routines[i], routines[j]] = [routines[j], routines[i]];
+  renderRoutines();
+  try {
+    const res = await authFetch(ROUTINES_API + "/order", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: routines.map((r) => r.id) }),
+    });
+    if (res.ok) routines = await res.json();
+  } catch (err) {
+    loadRoutines();   // reload the real order if the save failed
+  }
+  renderRoutines();
+}
+
+// Start (or resume) a workout from a routine.
+async function startRoutine(routine) {
+  if (activeWorkout) {
+    if (!confirm("You have a workout in progress — open that one instead?")) return;
+    openWorkout();
+    return;
+  }
+  try {
+    const res = await authFetch(WORKOUTS_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ routine_id: routine.id }),
+    });
+    if (!res.ok) return;
+    activeWorkout = await res.json();
+    openWorkout();
+  } catch (err) {
+    /* stay on home */
+  }
+}
+
+// --- Routine editor --------------------------------------------------
+newRoutineBtn.addEventListener("click", () => openRoutineEditor(null));
+
+function openRoutineEditor(routine) {
+  editingRoutine = routine
+    ? { id: routine.id, name: routine.name, content: deepCopy(routine.content) }
+    : { name: "", content: { exercises: [] } };
+  if (!editingRoutine.content || !Array.isArray(editingRoutine.content.exercises)) {
+    editingRoutine.content = { exercises: [] };
+  }
+  originalRoutineJSON = JSON.stringify(editingRoutine);
+
+  routineTitleEl.textContent = routine ? "Edit Routine" : "New Routine";
+  routineNameInput.value = editingRoutine.name;
+  routineDeleteBtn.hidden = !routine;
+
+  home.hidden = true;
+  workoutView.hidden = true;
+  exercisesView.hidden = true;
+  routineView.hidden = false;
+  renderRoutineEditor();
+}
+
+function closeRoutineEditor() {
+  editingRoutine = null;
+  routineView.hidden = true;
+  home.hidden = false;
+}
+
+function deepCopy(obj) {
+  return JSON.parse(JSON.stringify(obj ?? {}));
+}
+
+routineNameInput.addEventListener("input", () => {
+  if (editingRoutine) editingRoutine.name = routineNameInput.value;
+});
+
+function renderRoutineEditor() {
+  if (!editingRoutine) return;
+  const exercises = editingRoutine.content.exercises;
+
+  routineExercisesEl.replaceChildren();
+  routineEmptyMsg.hidden = exercises.length > 0;
+  exercises.forEach((entry, i) => {
+    routineExercisesEl.append(buildRoutineExerciseBlock(entry, i));
+  });
+}
+
+// Like buildExerciseBlock, but a template row: SET | LBS | REPS | remove,
+// no done checkbox, no notes, no stats.
+function buildRoutineExerciseBlock(entry, exIndex) {
+  const block = document.createElement("div");
+  block.className = "workout-exercise";
+
+  const head = document.createElement("div");
+  head.className = "workout-exercise-head";
+
+  const name = document.createElement("span");
+  name.className = "workout-exercise-name";
+  name.textContent = entry.name;
+
+  const removeEx = document.createElement("button");
+  removeEx.type = "button";
+  removeEx.className = "link-danger";
+  removeEx.textContent = "Remove";
+  removeEx.addEventListener("click", () => {
+    editingRoutine.content.exercises.splice(exIndex, 1);
+    renderRoutineEditor();
+  });
+
+  head.append(name, removeEx);
+  block.append(head);
+
+  const grid = document.createElement("div");
+  grid.className = "sets-grid sets-grid--template";
+  for (const label of ["SET", "LBS", "REPS", ""]) {
+    const cell = document.createElement("div");
+    cell.className = "sets-grid-head";
+    cell.textContent = label;
+    grid.append(cell);
+  }
+
+  entry.sets.forEach((set, setIndex) => {
+    const num = document.createElement("div");
+    num.className = "set-num";
+    num.textContent = String(setIndex + 1);
+
+    const weight = document.createElement("input");
+    weight.className = "set-input";
+    weight.type = "text";
+    weight.inputMode = "decimal";
+    weight.value = set.weight ?? "";
+    weight.addEventListener("input", () => {
+      const n = parseFloat(weight.value);
+      set.weight = Number.isFinite(n) ? n : null;
+    });
+
+    const reps = document.createElement("input");
+    reps.className = "set-input";
+    reps.type = "text";
+    reps.inputMode = "numeric";
+    reps.value = set.reps ?? "";
+    reps.addEventListener("input", () => {
+      const n = parseInt(reps.value, 10);
+      set.reps = Number.isFinite(n) ? n : null;
+    });
+
+    const removeSet = document.createElement("button");
+    removeSet.type = "button";
+    removeSet.className = "set-remove";
+    removeSet.setAttribute("aria-label", "Remove set");
+    removeSet.textContent = "✕";
+    removeSet.addEventListener("click", () => {
+      entry.sets.splice(setIndex, 1);
+      renderRoutineEditor();
+    });
+
+    grid.append(num, weight, reps, removeSet);
+  });
+
+  block.append(grid);
+
+  const addSet = document.createElement("button");
+  addSet.type = "button";
+  addSet.className = "ghost workout-add-set";
+  addSet.textContent = "+ Add Set";
+  addSet.addEventListener("click", () => {
+    entry.sets.push({ weight: null, reps: null });
+    renderRoutineEditor();
+  });
+  block.append(addSet);
+
+  return block;
+}
+
+routineAddExerciseBtn.addEventListener("click", () => {
+  openExercises({ onPick: addExerciseToRoutine, returnTo: routineView });
+});
+
+function addExerciseToRoutine(ex) {
+  editingRoutine.content.exercises.push({
+    exercise_id: ex.id,
+    name: ex.name,
+    sets: [{ weight: null, reps: null }],
+  });
+  closeExercises();          // back to the routine editor
+  renderRoutineEditor();
+}
+
+routineSaveBtn.addEventListener("click", async () => {
+  const name = routineNameInput.value.trim();
+  if (!name) {
+    routineNameInput.focus();
+    return;
+  }
+  routineSaveBtn.disabled = true;
+  const payload = { name, content: editingRoutine.content };
+  const editing = Boolean(editingRoutine.id);
+  try {
+    const res = await authFetch(
+      editing ? `${ROUTINES_API}/${editingRoutine.id}` : ROUTINES_API,
+      {
+        method: editing ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
+    if (!res.ok) return;
+    await loadRoutines();
+    closeRoutineEditor();
+  } catch (err) {
+    /* stay in the editor */
+  } finally {
+    routineSaveBtn.disabled = false;
+  }
+});
+
+routineDeleteBtn.addEventListener("click", async () => {
+  if (!editingRoutine || !editingRoutine.id) return;
+  if (!confirm(`Delete routine "${editingRoutine.name}"?`)) return;
+  routineDeleteBtn.disabled = true;
+  try {
+    const res = await authFetch(`${ROUTINES_API}/${editingRoutine.id}`, {
+      method: "DELETE",
+    });
+    if (!res.ok && res.status !== 404) return;
+    await loadRoutines();
+    closeRoutineEditor();
+  } catch (err) {
+    /* stay in the editor */
+  } finally {
+    routineDeleteBtn.disabled = false;
+  }
+});
+
+routineBackBtn.addEventListener("click", () => {
+  if (!editingRoutine) {
+    closeRoutineEditor();
+    return;
+  }
+  editingRoutine.name = routineNameInput.value;
+  const dirty = JSON.stringify(editingRoutine) !== originalRoutineJSON;
+  if (dirty && !confirm("Discard changes to this routine?")) return;
+  closeRoutineEditor();
+});
 
 // --- On load: if we already hold a token, try to use it -----------------
 if (store.access) {

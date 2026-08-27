@@ -172,11 +172,11 @@ body {
   margin-bottom: 14px;
 }
 
-/* The routine buttons, stacked */
+/* The routine rows, stacked */
 .routine-list {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
 }
 .routine-list:not(:empty) { margin-top: 4px; }
 
@@ -186,6 +186,44 @@ body {
   color: var(--muted);
   font-size: 14px;
 }
+
+/* One routine: [ name (tap to start) ] [▲] [▼] [⋮] */
+.routine-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 6px;
+  align-items: stretch;
+}
+.routine-name-btn {
+  text-align: left;
+  padding: 16px 16px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 120ms ease, transform 60ms ease;
+}
+.routine-name-btn:hover { background: var(--accent-press); }
+.routine-name-btn:active { transform: translateY(1px); }
+
+.routine-move,
+.routine-menu {
+  width: 34px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 120ms ease, opacity 120ms ease;
+}
+.routine-move:hover:not(:disabled),
+.routine-menu:hover { border-color: var(--accent); }
+.routine-move:disabled { opacity: 0.35; cursor: default; }
+.routine-menu { font-size: 18px; line-height: 1; }
 
 .ghost {
   margin-top: 14px;
@@ -404,6 +442,8 @@ body {
   gap: 6px;
   align-items: center;
 }
+/* Routine editor drops the "done" column: SET | LBS | REPS | remove */
+.sets-grid--template { grid-template-columns: 2rem 1fr 1fr 1.5rem; }
 .sets-grid-head {
   font-size: 10px;
   font-weight: 700;

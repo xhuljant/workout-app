@@ -1,8 +1,8 @@
 """Database models (tables).
 
-Tables so far: `users`, `exercises`, `workouts`. Every table in this app follows
-the same sync-friendly conventions we agreed on, so a future offline client can
-be added without redesigning the database:
+Tables so far: `users`, `exercises`, `workouts`, `routines`. Every table in this
+app follows the same sync-friendly conventions we agreed on, so a future offline
+client can be added without redesigning the database:
 
   - id          : a UUID (not an auto-increment number) so a client can create a
                   row and its id without asking the server first.
@@ -15,7 +15,16 @@ be added without redesigning the database:
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, Boolean, ForeignKey, Index, func, text
+from sqlalchemy import (
+    String,
+    Integer,
+    DateTime,
+    Boolean,
+    ForeignKey,
+    Index,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -147,6 +156,12 @@ class Workout(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), index=True, nullable=False
     )
 
+    # The routine this workout was started from, if any. Lets Finish offer to
+    # fold the session's exercise changes back into that routine.
+    routine_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("routines.id"), nullable=True
+    )
+
     # "active" while in progress, "finished" once completed.
     status: Mapped[str] = mapped_column(
         String, index=True, nullable=False, default="active"
@@ -184,4 +199,48 @@ class Workout(Base):
             unique=True,
             postgresql_where=text("status = 'active' AND deleted_at IS NULL"),
         ),
+    )
+
+
+class Routine(Base):
+    """A reusable workout template a user builds: a named, ordered list of
+    exercises, each with planned sets.
+
+    Like Workout, the body lives in one JSONB `content` blob -- the editor sends
+    the whole routine on Save. `position` controls the order it appears in on the
+    home screen (lower = higher up).
+    """
+
+    __tablename__ = "routines"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), index=True, nullable=False
+    )
+
+    name: Mapped[str] = mapped_column(String, nullable=False)
+
+    # Home-screen ordering. Lower shows first.
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # {"exercises": [{"exercise_id", "name", "sets": [{"weight", "reps"}]}]}
+    # -- a template, so no per-set "done" and no notes.
+    content: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=lambda: {"exercises": []}
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )

@@ -107,13 +107,62 @@ class WorkoutUpdate(BaseModel):
     content: WorkoutContent
 
 
+class WorkoutStart(BaseModel):
+    """Optional body for POST /api/workouts."""
+    routine_id: uuid.UUID | None = None
+
+
 class WorkoutPublic(BaseModel):
     """A workout as returned by the API."""
     id: uuid.UUID
     status: str
+    routine_id: uuid.UUID | None
     content: WorkoutContent
     started_at: datetime
     finished_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# --- Routines ------------------------------------------------------------
+
+class RoutineSet(BaseModel):
+    """One planned set in a routine template (no 'done' -- that's a workout thing)."""
+    weight: float | None = None
+    reps: int | None = None
+
+
+class RoutineExerciseEntry(BaseModel):
+    exercise_id: uuid.UUID | None = None
+    name: str
+    sets: list[RoutineSet] = Field(default_factory=list)
+
+
+class RoutineContent(BaseModel):
+    exercises: list[RoutineExerciseEntry] = Field(default_factory=list)
+
+
+class RoutineCreate(BaseModel):
+    """Body for POST /api/routines and PUT /api/routines/{id}."""
+    name: str = Field(min_length=1, max_length=200)
+    content: RoutineContent
+
+
+# PUT uses the same shape as create.
+RoutineUpdate = RoutineCreate
+
+
+class RoutineReorder(BaseModel):
+    """Body for PUT /api/routines/order -- routine ids in the desired order."""
+    ids: list[uuid.UUID]
+
+
+class RoutinePublic(BaseModel):
+    id: uuid.UUID
+    name: str
+    position: int
+    content: RoutineContent
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
