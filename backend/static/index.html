@@ -107,6 +107,39 @@
         </form>
       </details>
     </section>
+
+    <!-- Active workout: shown when "Start empty workout" is tapped. -->
+    <section id="workout-view" class="subview" hidden>
+      <div class="workout-head">
+        <button id="workout-back" class="ghost" type="button" aria-label="Back to home">&larr;</button>
+        <div class="workout-stats">
+          <div class="stat">
+            <span class="stat-label">Duration</span>
+            <span id="workout-duration" class="stat-value stat-value--time">0:00</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Volume</span>
+            <span id="workout-volume" class="stat-value">0 lbs</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Sets</span>
+            <span id="workout-sets" class="stat-value">0</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="workout-exercises" class="workout-exercises"></div>
+      <p id="workout-empty" class="routine-empty" hidden>
+        No exercises yet. Add one to start logging sets.
+      </p>
+
+      <button id="workout-add-exercise" class="action action--wide" type="button">+ Add Exercise</button>
+
+      <div class="workout-actions">
+        <button id="workout-finish" class="submit" type="button">Finish</button>
+        <button id="workout-discard" class="ghost workout-discard" type="button">Discard Workout</button>
+      </div>
+    </section>
   </main>
 
   <script src="/app.js"></script>

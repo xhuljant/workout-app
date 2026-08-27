@@ -1,8 +1,8 @@
 """Database models (tables).
 
-Milestone 1 only needs the `users` table. Every table in this app follows the
-same sync-friendly conventions we agreed on, so a future offline client can be
-added without redesigning the database:
+Tables so far: `users`, `exercises`, `workouts`. Every table in this app follows
+the same sync-friendly conventions we agreed on, so a future offline client can
+be added without redesigning the database:
 
   - id          : a UUID (not an auto-increment number) so a client can create a
                   row and its id without asking the server first.
@@ -15,7 +15,7 @@ added without redesigning the database:
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, Boolean, ForeignKey, func
+from sqlalchemy import String, DateTime, Boolean, ForeignKey, Index, func, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -121,4 +121,67 @@ class Exercise(Base):
     )
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+
+class Workout(Base):
+    """One workout session for a user.
+
+    A workout is "active" while it's being performed and "finished" once the user
+    taps Finish. The whole session -- its exercises, sets, reps, weights, notes --
+    lives in a single JSONB `content` blob rather than child tables: the client
+    re-saves the entire thing on every edit during a session, which is far less
+    churn than upserting individual set rows, and the data volume is tiny.
+
+    A partial unique index (see __table_args__) guarantees a user has at most one
+    active workout at a time, so "resume my workout" is unambiguous.
+    """
+
+    __tablename__ = "workouts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), index=True, nullable=False
+    )
+
+    # "active" while in progress, "finished" once completed.
+    status: Mapped[str] = mapped_column(
+        String, index=True, nullable=False, default="active"
+    )
+
+    # {"exercises": [{"exercise_id", "name", "notes", "sets": [{"weight","reps","done"}]}]}
+    content: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=lambda: {"exercises": []}
+    )
+
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_one_active_workout_per_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text("status = 'active' AND deleted_at IS NULL"),
+        ),
     )

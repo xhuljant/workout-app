@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .database import Base, engine, SessionLocal
 from . import models  # noqa: F401  -- importing this registers our tables on Base
-from .routers import auth, exercises
+from .routers import auth, exercises, workouts
 from .seed import seed_exercises
 
 
@@ -44,6 +44,7 @@ app = FastAPI(title="Workout App API", lifespan=lifespan)
 # mount below. e.g. a request to /api/auth/login matches this router, not a file.
 app.include_router(auth.router)
 app.include_router(exercises.router)
+app.include_router(workouts.router)
 
 # Serve the login page and its CSS/JS. html=True makes a request to "/" return
 # index.html. This mount is added LAST, so it only handles paths the API didn't.

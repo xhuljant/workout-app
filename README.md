@@ -6,11 +6,17 @@ A self-hosted workout tracker. Built piece by piece.
 a login/register screen, so we can confirm the whole login round-trip works
 before adding anything else.
 
-**Milestone 2 (this build): the exercise library.** After login you land on a
-home screen. From there, **Exercises** opens a searchable library that is seeded
-on startup from the public **free-exercise-db** (800+ exercises). Any user can
-add a custom exercise, and because the library is one shared table it shows up
-for everyone.
+**Milestone 2: the exercise library.** After login you land on a home screen.
+From there, **Exercises** opens a searchable library that is seeded on startup
+from the public **free-exercise-db** (800+ exercises). Any user can add a custom
+exercise, and because the library is one shared table it shows up for everyone.
+
+**Milestone 3 (this build): live workouts.** **Start empty workout** opens a
+session screen with a running duration timer, live volume / set totals, and a
+block per exercise with an editable sets table (LBS / REPS / done). Add exercises
+from the library. The in-progress workout is saved to the backend on every edit,
+so it resumes after a reload, a closed tab, or on another device. **Finish**
+records it (`status = finished`) as history; **Discard Workout** throws it away.
 
 ---
 
@@ -26,7 +32,7 @@ workout-app/
 │   ├── app/
 │   │   ├── config.py       # settings read from environment variables
 │   │   ├── database.py     # database connection + session handling
-│   │   ├── models.py       # the `users` and `exercises` tables
+│   │   ├── models.py       # the `users`, `exercises`, `workouts` tables
 │   │   ├── schemas.py      # request/response shapes (validation)
 │   │   ├── security.py     # argon2 password hashing + JWT tokens
 │   │   ├── deps.py         # get_current_user (protects private routes)
@@ -36,7 +42,8 @@ workout-app/
 │   │   │   └── exercises.json   # vendored free-exercise-db snapshot (public domain)
 │   │   └── routers/
 │   │       ├── auth.py     # /register, /login, /refresh, /me
-│   │       └── exercises.py    # GET/POST /api/exercises
+│   │       ├── exercises.py    # GET/POST /api/exercises
+│   │       └── workouts.py     # start / resume / edit / finish / discard a workout
 │   └── static/             # the web UI (served by the API for now)
 │       ├── index.html
 │       ├── style.css
@@ -104,6 +111,26 @@ To stop: press `Ctrl-C`. To also wipe the database and start fresh:
 4. Log in as a different account and open **Exercises** — the custom exercise is
    there too, because the library is shared.
 
+### Workouts (milestone 3)
+
+1. On the home screen click **Start empty workout**. The workout screen opens and
+   **Duration** starts counting up.
+2. Tap **+ Add Exercise**, search the library, and pick one. It appears with a
+   single empty set row.
+3. Type a weight and reps, then tick the ✓ — **Volume** and **Sets** update. Add
+   more sets with **+ Add Set**; jot something in the notes box.
+4. Reload the page. The workout comes back exactly as you left it, and Duration
+   keeps counting from the real start time. (Open a different browser, log in as
+   the same user, and **Resume workout** shows the same session.)
+5. **Finish** returns you home. **Discard Workout** (after a confirm) throws the
+   session away instead.
+
+To confirm a finished workout landed in Postgres:
+
+```bash
+docker compose exec db psql -U workout -d workout -c "select status, started_at, finished_at, jsonb_array_length(content->'exercises') as exercises from workouts;"
+```
+
 You can also poke the API directly through its auto-generated docs at
 **http://localhost:8000/docs**.
 
@@ -133,8 +160,15 @@ docker compose exec db psql -U workout -d workout -c "select email, display_name
 - **Tokens live in `localStorage`** for now — convenient and fine on your private
   network. We can harden this (httpOnly refresh cookie) before wider exposure.
 - **Sync-friendly columns** (`updated_at`, `deleted_at`, UUID ids) are on every
-  table (`users`, `exercises`); the actual sync endpoint comes later, once the
-  basics exist.
+  table (`users`, `exercises`, `workouts`); the actual sync endpoint comes later,
+  once the basics exist.
+- **A workout's contents live in one JSONB `content` blob**, not child tables.
+  The client re-saves the whole workout on every edit during a session — a blob
+  makes that one small write instead of many set-row upserts, and the data is
+  tiny. A partial unique index enforces at most one `active` workout per user.
+- **The in-progress workout is server-side state.** Every edit `PUT`s to
+  `/api/workouts/active`, so closing the tab or switching devices loses nothing.
+  `Finish` just flips `status` to `finished`; the row stays as history.
 - **The exercise library is one shared table**, not per-user. A custom exercise
   one person adds is visible to everyone. `is_custom` and `created_by` mark where
   a row came from; `source_id` (the free-exercise-db slug) lets the startup seed
@@ -151,6 +185,9 @@ docker compose exec db psql -U workout -d workout -c "select email, display_name
 
 ## Next milestone
 
-Routines: an `routines` table (a named, ordered list of exercises), endpoints to
-create and list them, and wiring the home screen's **New Routine** button and
-routine list to real data — then test.
+One of:
+- **Workout history**: a screen listing finished workouts, and using the last
+  time you did an exercise to fill the "previous" hint on each set row.
+- **Routines**: a `routines` table (a named, ordered list of exercises),
+  endpoints to create and list them, and wiring the home screen's **New Routine**
+  button and routine list to real data.

@@ -78,3 +78,42 @@ class ExercisePublic(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# --- Workouts --------------------------------------------------------------
+
+class WorkoutSet(BaseModel):
+    """One set. weight/reps stay optional so a half-filled row still saves."""
+    weight: float | None = None
+    reps: int | None = None
+    done: bool = False
+
+
+class WorkoutExerciseEntry(BaseModel):
+    """One exercise within a workout, with its sets."""
+    exercise_id: uuid.UUID | None = None
+    name: str
+    notes: str = ""
+    sets: list[WorkoutSet] = Field(default_factory=list)
+
+
+class WorkoutContent(BaseModel):
+    """The whole editable body of a workout."""
+    exercises: list[WorkoutExerciseEntry] = Field(default_factory=list)
+
+
+class WorkoutUpdate(BaseModel):
+    """Body for PUT /api/workouts/active."""
+    content: WorkoutContent
+
+
+class WorkoutPublic(BaseModel):
+    """A workout as returned by the API."""
+    id: uuid.UUID
+    status: str
+    content: WorkoutContent
+    started_at: datetime
+    finished_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
