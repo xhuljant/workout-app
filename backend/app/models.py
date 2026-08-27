@@ -15,7 +15,7 @@ added without redesigning the database:
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, func
+from sqlalchemy import String, DateTime, Boolean, ForeignKey, func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -58,6 +58,67 @@ class User(Base):
     )
 
     # NULL = the account is active. A timestamp here = soft-deleted.
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class Exercise(Base):
+    """The exercise library. One shared, global table -- every user sees every
+    row, so an exercise added by one person shows up for everyone.
+
+    Rows come from two places:
+      - the seeded public library (free-exercise-db), where source_id holds that
+        project's slug and is_custom is False;
+      - exercises a user adds through the app, where created_by points at them
+        and is_custom is True.
+    """
+
+    __tablename__ = "exercises"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+    # The free-exercise-db slug (e.g. "Barbell_Squat"). Lets the startup seed run
+    # again without creating duplicates. NULL for user-added exercises.
+    source_id: Mapped[str | None] = mapped_column(
+        String, unique=True, index=True, nullable=True
+    )
+
+    name: Mapped[str] = mapped_column(String, index=True, nullable=False)
+
+    # All optional -- the public data leaves some of these blank, and the add
+    # form only requires a name.
+    category: Mapped[str | None] = mapped_column(String, nullable=True)
+    equipment: Mapped[str | None] = mapped_column(String, nullable=True)
+    force: Mapped[str | None] = mapped_column(String, nullable=True)
+    level: Mapped[str | None] = mapped_column(String, nullable=True)
+    mechanic: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Lists of strings. JSONB so we don't need a separate table for these yet.
+    primary_muscles: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    secondary_muscles: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    instructions: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+    # True = added by a user through the app; False = came from the seeded library.
+    is_custom: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Who added it (NULL for seeded rows). Kept even if that user is later
+    # soft-deleted, so the exercise stays in everyone's library.
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

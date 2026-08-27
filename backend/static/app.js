@@ -41,6 +41,18 @@ const passwordInput = document.getElementById("password");
 const routineList = document.getElementById("routine-list");
 const routineEmpty = document.getElementById("routine-empty");
 
+// Exercises sub-view
+const exercisesBtn = document.getElementById("exercises");
+const exercisesView = document.getElementById("exercises-view");
+const exercisesBack = document.getElementById("exercises-back");
+const exerciseSearch = document.getElementById("exercise-search");
+const exerciseStatus = document.getElementById("exercise-status");
+const exerciseListEl = document.getElementById("exercise-list");
+const addExerciseDetails = document.getElementById("add-exercise");
+const addExerciseForm = document.getElementById("add-exercise-form");
+const addExerciseMessage = document.getElementById("add-exercise-message");
+const addExerciseSubmit = document.getElementById("add-exercise-submit");
+
 // The user's routines. Empty for now -- nothing creates routines yet. When a
 // routines source is added later, fill this array and renderRoutines() shows a
 // button per routine with no other change.
@@ -137,6 +149,7 @@ async function loadProfile() {
 function showLoggedIn(user) {
   form.hidden = true;
   tabsEl.hidden = true;
+  exercisesView.hidden = true;   // always land on the home screen
   home.hidden = false;
   whoEl.textContent = user.display_name;
   renderRoutines();
@@ -146,6 +159,7 @@ function showLoggedOut() {
   form.hidden = false;
   tabsEl.hidden = false;
   home.hidden = true;
+  exercisesView.hidden = true;
 }
 
 // Show a button per routine, or a "create one" message when there are none.
@@ -173,7 +187,177 @@ logoutBtn.addEventListener("click", () => {
   showMessage("");
 });
 
+// --- Exercises --------------------------------------------------------------
+const EXERCISES_API = "/api/exercises";
+
+// fetch() with the access token attached. On a 401 the token is dead, so we
+// clear it and drop back to the login form.
+async function authFetch(path, options = {}) {
+  const res = await fetch(path, {
+    ...options,
+    headers: { ...(options.headers || {}), Authorization: "Bearer " + store.access },
+  });
+  if (res.status === 401) {
+    store.clear();
+    showLoggedOut();
+    throw new Error("Session expired. Please log in again.");
+  }
+  return res;
+}
+
+function openExercises() {
+  home.hidden = true;
+  exercisesView.hidden = false;
+  loadExercises(exerciseSearch.value.trim());
+}
+
+function closeExercises() {
+  exercisesView.hidden = true;
+  home.hidden = false;
+}
+
+exercisesBtn.addEventListener("click", openExercises);
+exercisesBack.addEventListener("click", closeExercises);
+
+// Load the library (optionally filtered) and render it.
+async function loadExercises(query = "") {
+  exerciseStatus.textContent = "Loading…";
+  exerciseListEl.replaceChildren();
+  try {
+    const url = query
+      ? `${EXERCISES_API}?q=${encodeURIComponent(query)}`
+      : EXERCISES_API;
+    const res = await authFetch(url);
+    if (!res.ok) {
+      exerciseStatus.textContent = "Could not load exercises.";
+      return;
+    }
+    const items = await res.json();
+    renderExercises(items, query);
+  } catch (err) {
+    exerciseStatus.textContent = err.message || "Could not reach the server.";
+  }
+}
+
+function renderExercises(items, query) {
+  exerciseListEl.replaceChildren();
+
+  if (items.length === 0) {
+    exerciseStatus.textContent = query
+      ? `No exercises match “${query}”.`
+      : "No exercises yet.";
+    return;
+  }
+
+  exerciseStatus.textContent = `${items.length} exercise${items.length === 1 ? "" : "s"}`;
+
+  for (const ex of items) {
+    const row = document.createElement("details");
+    row.className = "exercise";
+
+    const summary = document.createElement("summary");
+    summary.className = "exercise-name";
+    summary.textContent = ex.name;
+    if (ex.is_custom) {
+      const tag = document.createElement("span");
+      tag.className = "exercise-tag";
+      tag.textContent = "custom";
+      summary.append(" ", tag);
+    }
+    row.append(summary);
+
+    const meta = [ex.category, ex.equipment, (ex.primary_muscles || []).join(", ")]
+      .filter(Boolean)
+      .join(" · ");
+    if (meta) {
+      const metaEl = document.createElement("p");
+      metaEl.className = "exercise-meta";
+      metaEl.textContent = meta;
+      row.append(metaEl);
+    }
+
+    if ((ex.instructions || []).length) {
+      const ol = document.createElement("ol");
+      ol.className = "exercise-steps";
+      for (const step of ex.instructions) {
+        const li = document.createElement("li");
+        li.textContent = step;
+        ol.append(li);
+      }
+      row.append(ol);
+    }
+
+    exerciseListEl.append(row);
+  }
+}
+
+// Debounce the search box so we don't fire a request on every keystroke.
+let searchTimer;
+exerciseSearch.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => loadExercises(exerciseSearch.value.trim()), 250);
+});
+
+// Add a custom exercise, then refresh the list so it (and everyone else) sees it.
+addExerciseForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  addExerciseSubmit.disabled = true;
+  addExerciseMessage.textContent = "";
+  addExerciseMessage.dataset.kind = "error";
+
+  const name = document.getElementById("ex-name").value.trim();
+  if (!name) {
+    addExerciseMessage.textContent = "A name is required.";
+    addExerciseSubmit.disabled = false;
+    return;
+  }
+
+  const payload = {
+    name,
+    category: document.getElementById("ex-category").value.trim() || null,
+    equipment: document.getElementById("ex-equipment").value.trim() || null,
+    primary_muscles: splitList(document.getElementById("ex-muscles").value, ","),
+    instructions: splitList(document.getElementById("ex-instructions").value, "\n"),
+  };
+
+  try {
+    const res = await authFetch(EXERCISES_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      addExerciseMessage.textContent =
+        detailToText(data.detail) || "Could not add the exercise.";
+      return;
+    }
+
+    addExerciseForm.reset();
+    addExerciseDetails.open = false;
+    exerciseSearch.value = data.name;
+    await loadExercises(data.name);
+  } catch (err) {
+    addExerciseMessage.textContent = err.message || "Could not reach the server.";
+  } finally {
+    addExerciseSubmit.disabled = false;
+  }
+});
+
+// "a, b, c" or a multi-line string -> ["a", "b", "c"], blanks dropped.
+function splitList(value, separator) {
+  return value
+    .split(separator)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 // --- On load: if we already hold a token, try to use it -----------------
 if (store.access) {
+  // Hide the login / create-account UI straight away so it never flashes
+  // before loadProfile() confirms the token and shows the home view.
+  form.hidden = true;
+  tabsEl.hidden = true;
   loadProfile();
 }

@@ -83,7 +83,8 @@ body {
   color: var(--muted);
   margin-bottom: 6px;
 }
-.field input {
+.field input,
+.field textarea {
   width: 100%;
   padding: 12px;
   background: var(--surface-2);
@@ -91,10 +92,13 @@ body {
   border-radius: 10px;
   color: var(--text);
   font-size: 15px;
+  font-family: inherit;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
+.field textarea { resize: vertical; }
 /* Clear, visible keyboard focus for accessibility */
-.field input:focus {
+.field input:focus,
+.field textarea:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.25);
@@ -193,6 +197,108 @@ body {
 }
 .ghost:hover { border-color: var(--accent); }
 .home-head .ghost { margin-top: 0; flex-shrink: 0; }
+
+/* Sub-views (Exercises, and future screens reached from the home screen) */
+.subview-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.subview-head .ghost { margin-top: 0; }
+.subview-title { margin: 0; font-size: 18px; font-weight: 700; }
+
+/* Search box: same look as the auth inputs */
+.search {
+  width: 100%;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 15px;
+  margin-bottom: 10px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.search:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.25);
+}
+
+.exercise-status {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* The scrollable list of exercises */
+.exercise-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 46vh;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+.exercise {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.exercise-name {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  list-style: none;
+}
+.exercise-name::-webkit-details-marker { display: none; }
+.exercise-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 1px 5px;
+}
+.exercise-meta {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+.exercise-steps {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--text);
+}
+.exercise-steps li { margin-bottom: 4px; }
+
+/* "Add an exercise" disclosure */
+.add-exercise {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+.add-exercise > summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  list-style: none;
+}
+.add-exercise > summary::-webkit-details-marker { display: none; }
+.add-exercise > form { margin-top: 14px; }
+.opt {
+  font-weight: 400;
+  text-transform: none;
+  color: var(--muted);
+}
 
 /* Respect people who prefer reduced motion */
 @media (prefers-reduced-motion: reduce) {

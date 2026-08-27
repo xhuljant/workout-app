@@ -65,6 +65,48 @@
         No routines yet. Create a custom routine to get started.
       </p>
     </section>
+
+    <!-- Exercise library: shown when "Exercises" is tapped on the home screen. -->
+    <section id="exercises-view" class="subview" hidden>
+      <div class="subview-head">
+        <button id="exercises-back" class="ghost" type="button">&larr; Back</button>
+        <h2 class="subview-title">Exercises</h2>
+      </div>
+
+      <input id="exercise-search" class="search" type="search"
+             placeholder="Search exercises" autocomplete="off" />
+
+      <p id="exercise-status" class="exercise-status" aria-live="polite"></p>
+      <div id="exercise-list" class="exercise-list"></div>
+
+      <details id="add-exercise" class="add-exercise">
+        <summary>Add an exercise</summary>
+        <form id="add-exercise-form" novalidate>
+          <div class="field">
+            <label for="ex-name">Name</label>
+            <input id="ex-name" name="name" type="text" required />
+          </div>
+          <div class="field">
+            <label for="ex-category">Category <span class="opt">optional</span></label>
+            <input id="ex-category" name="category" type="text" />
+          </div>
+          <div class="field">
+            <label for="ex-equipment">Equipment <span class="opt">optional</span></label>
+            <input id="ex-equipment" name="equipment" type="text" />
+          </div>
+          <div class="field">
+            <label for="ex-muscles">Primary muscles <span class="opt">optional, comma-separated</span></label>
+            <input id="ex-muscles" name="primary_muscles" type="text" />
+          </div>
+          <div class="field">
+            <label for="ex-instructions">Instructions <span class="opt">optional, one step per line</span></label>
+            <textarea id="ex-instructions" name="instructions" rows="3"></textarea>
+          </div>
+          <p id="add-exercise-message" class="message" role="alert" aria-live="polite"></p>
+          <button id="add-exercise-submit" class="submit" type="submit">Add exercise</button>
+        </form>
+      </details>
+    </section>
   </main>
 
   <script src="/app.js"></script>

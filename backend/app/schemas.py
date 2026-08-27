@@ -48,3 +48,33 @@ class Token(BaseModel):
 class RefreshRequest(BaseModel):
     """Body for POST /api/auth/refresh."""
     refresh_token: str
+
+
+# --- Exercises ---------------------------------------------------------------
+
+class ExerciseCreate(BaseModel):
+    """Body for POST /api/exercises. Only the name is required; the rest mirror
+    the fields in the seeded public library and are all optional."""
+    name: str = Field(min_length=1, max_length=200)
+    category: str | None = Field(default=None, max_length=100)
+    equipment: str | None = Field(default=None, max_length=100)
+    primary_muscles: list[str] = Field(default_factory=list)
+    instructions: list[str] = Field(default_factory=list)
+
+
+class ExercisePublic(BaseModel):
+    """A single exercise as returned by the API."""
+    id: uuid.UUID
+    name: str
+    category: str | None
+    equipment: str | None
+    force: str | None
+    level: str | None
+    mechanic: str | None
+    primary_muscles: list[str]
+    secondary_muscles: list[str]
+    instructions: list[str]
+    is_custom: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
