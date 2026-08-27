@@ -65,6 +65,8 @@ const workoutEmptyEl = document.getElementById("workout-empty");
 const workoutAddExerciseBtn = document.getElementById("workout-add-exercise");
 const workoutFinishBtn = document.getElementById("workout-finish");
 const workoutDiscardBtn = document.getElementById("workout-discard");
+const workoutFab = document.getElementById("workout-fab");
+const workoutFabTime = document.getElementById("workout-fab-time");
 
 // Routine editor sub-view
 const newRoutineBtn = document.getElementById("new-routine");
@@ -190,6 +192,7 @@ function showLoggedOut() {
   routineView.hidden = true;
   stopDurationTimer();
   activeWorkout = null;
+  updateWorkoutFab();
 }
 
 // One row per routine: tap the name to start a workout from it, ▲/▼ to reorder,
@@ -283,6 +286,7 @@ function closeExercises() {
   exercisesReturnTo.hidden = false;
   exercisePickHandler = null;
   exercisesReturnTo = home;
+  updateWorkoutFab();
 }
 
 exercisesBtn.addEventListener("click", () => openExercises());
@@ -468,11 +472,23 @@ async function loadActiveWorkout() {
     activeWorkout = null;
   }
   refreshStartButton();
+  updateWorkoutFab();
 }
 
 function refreshStartButton() {
   startEmptyBtn.textContent = activeWorkout ? "Resume workout" : "Start empty workout";
 }
+
+// The floating button shows only when a workout is active AND the user is on some
+// other screen. Also makes sure the duration timer is ticking so its label stays
+// live even after a reload lands the user on the home screen.
+function updateWorkoutFab() {
+  const show = Boolean(activeWorkout) && workoutView.hidden;
+  workoutFab.hidden = !show;
+  if (show && !durationTimer) startDurationTimer();
+}
+
+workoutFab.addEventListener("click", () => openWorkout());
 
 function ensureContent() {
   if (!activeWorkout.content) activeWorkout.content = { exercises: [] };
@@ -500,20 +516,26 @@ startEmptyBtn.addEventListener("click", async () => {
 
 function openWorkout() {
   ensureContent();
+  // Neutralise any half-open picker / routine editor we may be jumping over.
+  exercisePickHandler = null;
+  editingRoutine = null;
   home.hidden = true;
   exercisesView.hidden = true;
+  routineView.hidden = true;
   workoutView.hidden = false;
   renderWorkout();
   startDurationTimer();
+  updateWorkoutFab();
 }
 
 // Back arrow: leave the workout running (it's saved server-side) and go home.
+// The duration timer keeps running so the floating button's label stays live.
 function closeWorkout() {
   flushWorkoutSave();
-  stopDurationTimer();
   workoutView.hidden = true;
   home.hidden = false;
   refreshStartButton();
+  updateWorkoutFab();
 }
 workoutBack.addEventListener("click", closeWorkout);
 
@@ -671,9 +693,12 @@ function updateWorkoutStats() {
 // --- Duration timer ----------------------------------------------------
 function startDurationTimer() {
   stopDurationTimer();
+  if (!activeWorkout) return;
   const tick = () => {
-    const started = Date.parse(activeWorkout.started_at);
-    workoutDurationEl.textContent = formatDuration(Date.now() - started);
+    if (!activeWorkout) return stopDurationTimer();
+    const label = formatDuration(Date.now() - Date.parse(activeWorkout.started_at));
+    workoutDurationEl.textContent = label;
+    workoutFabTime.textContent = label;
   };
   tick();
   durationTimer = setInterval(tick, 1000);
@@ -682,6 +707,7 @@ function startDurationTimer() {
 function stopDurationTimer() {
   if (durationTimer) clearInterval(durationTimer);
   durationTimer = null;
+  workoutFabTime.textContent = "";
 }
 
 function formatDuration(ms) {
@@ -814,6 +840,7 @@ function endWorkoutUI() {
   workoutView.hidden = true;
   home.hidden = false;
   refreshStartButton();
+  updateWorkoutFab();
 }
 
 // --- Routines ----------------------------------------------------------
@@ -902,6 +929,7 @@ function closeRoutineEditor() {
   editingRoutine = null;
   routineView.hidden = true;
   home.hidden = false;
+  updateWorkoutFab();
 }
 
 function deepCopy(obj) {

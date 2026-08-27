@@ -189,7 +189,7 @@ body {
 .routine-list:not(:empty) { margin-top: 4px; }
 
 .routine-empty {
-  margin: 8px 0 0;
+  margin: 16px 0;
   text-align: center;
   color: var(--muted);
   font-size: 14px;
@@ -511,6 +511,36 @@ body {
   border-color: var(--border);
 }
 .workout-discard:hover { border-color: var(--error); }
+
+/* Floating "resume workout" button, pinned to the bottom of the viewport */
+.workout-fab {
+  position: fixed;
+  left: 50%;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 24px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  transition: background 120ms ease, transform 60ms ease;
+}
+.workout-fab:hover { background: var(--accent-press); }
+.workout-fab:active { transform: translateX(-50%) translateY(1px); }
+.workout-fab-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  opacity: 0.85;
+}
+.workout-fab-time:empty { display: none; }
 
 /* Respect people who prefer reduced motion */
 @media (prefers-reduced-motion: reduce) {
