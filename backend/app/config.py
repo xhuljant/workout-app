@@ -24,8 +24,10 @@ class Settings(BaseSettings):
     # How long a short-lived access token is valid, in minutes.
     access_token_expire_minutes: int = 15
 
-    # How long a long-lived refresh token is valid, in days.
-    refresh_token_expire_days: int = 30
+    # How long a long-lived refresh token is valid, in days. Long, so a device
+    # stays signed in between sessions; the client silently swaps it for a new
+    # access token whenever the short one expires.
+    refresh_token_expire_days: int = 90
 
     # Also read a local ".env" file if one exists (handy when running without Docker).
     # extra="ignore" means unrelated env vars won't cause an error.

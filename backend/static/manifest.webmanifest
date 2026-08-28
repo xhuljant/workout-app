@@ -1,0 +1,11 @@
+{
+  "name": "Workout Log",
+  "short_name": "Workout Log",
+  "description": "A self-hosted workout tracker.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0b0d",
+  "theme_color": "#0b0b0d"
+}

@@ -156,19 +156,18 @@ function detailToText(detail) {
 
 // --- Protected call: who am I? ------------------------------------------
 async function loadProfile() {
-  const res = await fetch(API + "/me", {
-    headers: { Authorization: "Bearer " + store.access },
-  });
-
-  if (!res.ok) {
-    // Token missing or expired -> fall back to the login form.
-    store.clear();
+  try {
+    const res = await authFetch(API + "/me");   // authFetch refreshes a stale token
+    if (!res.ok) {
+      store.clear();
+      showLoggedOut();
+      return;
+    }
+    showLoggedIn(await res.json());
+  } catch (err) {
+    // authFetch already cleared tokens + showed the login form on a hard 401.
     showLoggedOut();
-    return;
   }
-
-  const user = await res.json();
-  showLoggedIn(user);
 }
 
 function showLoggedIn(user) {
@@ -248,19 +247,45 @@ logoutBtn.addEventListener("click", () => {
 // --- Exercises --------------------------------------------------------------
 const EXERCISES_API = "/api/exercises";
 
-// fetch() with the access token attached. On a 401 the token is dead, so we
-// clear it and drop back to the login form.
-async function authFetch(path, options = {}) {
+// Swap the refresh token for a fresh access + refresh pair. Deduped so a burst of
+// parallel 401s only triggers one refresh request.
+let refreshInFlight = null;
+function refreshSession() {
+  if (!store.refresh) return Promise.resolve(false);
+  if (!refreshInFlight) {
+    refreshInFlight = fetch(API + "/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: store.refresh }),
+    })
+      .then(async (res) => {
+        if (!res.ok) return false;
+        store.set(await res.json());
+        return true;
+      })
+      .catch(() => false)
+      .finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
+}
+
+// fetch() with the access token attached. On a 401 we try to refresh the session
+// once and retry; only if that fails do we drop back to the login form.
+async function authFetch(path, options = {}, retried = false) {
   const res = await fetch(path, {
     ...options,
     headers: { ...(options.headers || {}), Authorization: "Bearer " + store.access },
   });
-  if (res.status === 401) {
-    store.clear();
-    showLoggedOut();
-    throw new Error("Session expired. Please log in again.");
+
+  if (res.status !== 401) return res;
+
+  if (!retried && (await refreshSession())) {
+    return authFetch(path, options, true);
   }
-  return res;
+
+  store.clear();
+  showLoggedOut();
+  throw new Error("Session expired. Please log in again.");
 }
 
 // When set, the Exercises view acts as a picker: tapping a row calls this with
@@ -274,11 +299,12 @@ let exercisesReturnTo = home;
 function openExercises({ onPick = null, returnTo = home } = {}) {
   exercisePickHandler = onPick;
   exercisesReturnTo = returnTo;
+  exerciseSearch.value = "";        // always start a fresh search
   home.hidden = true;
   workoutView.hidden = true;
   routineView.hidden = true;
   exercisesView.hidden = false;
-  loadExercises(exerciseSearch.value.trim());
+  loadExercises("");
 }
 
 function closeExercises() {
@@ -1109,10 +1135,10 @@ routineBackBtn.addEventListener("click", () => {
   closeRoutineEditor();
 });
 
-// --- On load: if we already hold a token, try to use it -----------------
-if (store.access) {
+// --- On load: if we hold either token, try to use it --------------------
+if (store.access || store.refresh) {
   // Hide the login / create-account UI straight away so it never flashes
-  // before loadProfile() confirms the token and shows the home view.
+  // before loadProfile() confirms the session and shows the home view.
   form.hidden = true;
   tabsEl.hidden = true;
   loadProfile();

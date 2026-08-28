@@ -33,11 +33,19 @@ def _tokens_for(user: User) -> Token:
     )
 
 
+# Email is the login identifier, so it's case- and whitespace-insensitive:
+# "Bob@X.com " and "bob@x.com" are the same account.
+def _normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
 def register(body: UserCreate, db: Session = Depends(get_db)):
     """Create a new account and return tokens, so the user is logged in immediately."""
+    email = _normalize_email(body.email)
+
     # Fail early with a clear message if the email is already taken.
-    existing = db.query(User).filter(User.email == body.email).first()
+    existing = db.query(User).filter(User.email == email).first()
     if existing is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -45,7 +53,7 @@ def register(body: UserCreate, db: Session = Depends(get_db)):
         )
 
     user = User(
-        email=body.email,
+        email=email,
         display_name=body.display_name,
         password_hash=hash_password(body.password),  # store the hash, never the password
     )
@@ -61,7 +69,7 @@ def login(body: UserLogin, db: Session = Depends(get_db)):
     """Check email + password and return tokens on success."""
     user = (
         db.query(User)
-        .filter(User.email == body.email, User.deleted_at.is_(None))
+        .filter(User.email == _normalize_email(body.email), User.deleted_at.is_(None))
         .first()
     )
 

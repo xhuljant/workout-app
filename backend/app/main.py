@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from .database import Base, engine, SessionLocal
 from . import models  # noqa: F401  -- importing this registers our tables on Base
@@ -28,11 +29,15 @@ async def lifespan(app: FastAPI):
     # (Alembic). For now this keeps milestone 1 simple.
     Base.metadata.create_all(bind=engine)
 
-    # Load the public exercise library into the DB (only inserts what's missing).
     with SessionLocal() as db:
+        # Load the public exercise library into the DB (only inserts what's missing).
         added = seed_exercises(db)
         if added:
             print(f"Seeded {added} exercises into the library.")
+
+        # One-time fixup: emails are now stored lower-cased.
+        db.execute(text("UPDATE users SET email = lower(email) WHERE email <> lower(email)"))
+        db.commit()
 
     yield
     # (nothing to clean up on shutdown yet)
