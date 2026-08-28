@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=25" />
+  <link rel="stylesheet" href="/style.css?v=26" />
 </head>
 <body>
   <main class="card">
@@ -126,6 +126,15 @@
         <div class="field">
           <label for="ex-name">Name</label>
           <input id="ex-name" name="name" type="text" required />
+        </div>
+        <div class="field">
+          <label for="ex-tracking">Tracking</label>
+          <select id="ex-tracking">
+            <option value="weight_reps">Weight &amp; reps</option>
+            <option value="reps">Reps only</option>
+            <option value="time">Time</option>
+            <option value="distance_time">Distance &amp; time</option>
+          </select>
         </div>
         <div class="field">
           <label for="ex-category">Category <span class="opt">optional</span></label>
@@ -333,6 +342,6 @@
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=25"></script>
+  <script src="/app.js?v=26"></script>
 </body>
 </html>

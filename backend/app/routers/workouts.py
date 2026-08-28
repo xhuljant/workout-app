@@ -74,8 +74,11 @@ def _require_active(db: Session, user: User) -> Workout:
     return workout
 
 
+_SET_METRICS = ("weight", "reps", "seconds", "distance")
+
+
 def _fresh_exercises(source_exercises: list, *, keep_notes: bool) -> dict:
-    """Copy an exercise list into a fresh workout body: weights/reps become
+    """Copy an exercise list into a fresh workout body: logged numbers become
     targets, every set starts un-done, PR flags are dropped."""
     out = []
     for entry in source_exercises or []:
@@ -83,9 +86,10 @@ def _fresh_exercises(source_exercises: list, *, keep_notes: bool) -> dict:
             {
                 "exercise_id": entry.get("exercise_id"),
                 "name": entry.get("name", ""),
+                "tracking_type": entry.get("tracking_type", "weight_reps"),
                 "notes": entry.get("notes", "") if keep_notes else "",
                 "sets": [
-                    {"weight": s.get("weight"), "reps": s.get("reps"), "done": False}
+                    {**{m: s.get(m) for m in _SET_METRICS}, "done": False}
                     for s in entry.get("sets", [])
                 ],
             }
@@ -216,20 +220,28 @@ def export_history_csv(
 
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["date", "routine", "exercise", "set", "weight_lb", "reps", "completed"])
+    writer.writerow(
+        ["date", "routine", "exercise", "tracking", "set",
+         "weight_lb", "reps", "seconds", "distance_mi", "completed"]
+    )
+    cell = lambda v: v if v is not None else ""
     for w in workouts:
         when = (w.finished_at or w.started_at).date().isoformat()
         routine = routine_names.get(w.routine_id, "")
         for entry in (w.content or {}).get("exercises", []):
             name = entry.get("name", "")
+            tracking = entry.get("tracking_type", "weight_reps")
             for i, s in enumerate(entry.get("sets", []), start=1):
                 writer.writerow([
                     when,
                     routine,
                     name,
+                    tracking,
                     i,
-                    s.get("weight") if s.get("weight") is not None else "",
-                    s.get("reps") if s.get("reps") is not None else "",
+                    cell(s.get("weight")),
+                    cell(s.get("reps")),
+                    cell(s.get("seconds")),
+                    cell(s.get("distance")),
                     "yes" if s.get("done") else "no",
                 ])
 
@@ -341,21 +353,34 @@ def previous_performance(
                 continue
 
             done_sets = [s for s in entry.get("sets", []) if s.get("done")]
+            prev = result[eid]
             for s in done_sets:
                 wt = s.get("weight") or 0
                 rp = s.get("reps") or 0
-                if wt:
-                    prev = result[eid]
-                    if prev.best_weight is None or wt > prev.best_weight:
-                        prev.best_weight = wt
-                    if rp:
-                        e = round(_epley_1rm(wt, rp), 1)
-                        if prev.best_1rm is None or e > prev.best_1rm:
-                            prev.best_1rm = e
+                sec = s.get("seconds") or 0
+                dist = s.get("distance") or 0
+                if wt and (prev.best_weight is None or wt > prev.best_weight):
+                    prev.best_weight = wt
+                if wt and rp:
+                    e = round(_epley_1rm(wt, rp), 1)
+                    if prev.best_1rm is None or e > prev.best_1rm:
+                        prev.best_1rm = e
+                if rp and (prev.best_reps is None or rp > prev.best_reps):
+                    prev.best_reps = rp
+                if sec and (prev.best_seconds is None or sec > prev.best_seconds):
+                    prev.best_seconds = sec
+                if dist and (prev.best_distance is None or dist > prev.best_distance):
+                    prev.best_distance = dist
 
             if eid not in got_last and done_sets:
-                result[eid].last_sets = [
-                    WorkoutSet(weight=s.get("weight"), reps=s.get("reps"), done=True)
+                prev.last_sets = [
+                    WorkoutSet(
+                        weight=s.get("weight"),
+                        reps=s.get("reps"),
+                        seconds=s.get("seconds"),
+                        distance=s.get("distance"),
+                        done=True,
+                    )
                     for s in done_sets
                 ]
                 got_last.add(eid)

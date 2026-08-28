@@ -19,6 +19,14 @@ from .models import Exercise
 _DATA_FILE = Path(__file__).parent / "data" / "exercises.json"
 
 
+def _tracking_for(category: str | None) -> str:
+    if category == "cardio":
+        return "distance_time"
+    if category == "stretching":
+        return "time"
+    return "weight_reps"
+
+
 def seed_exercises(db: Session) -> int:
     """Insert any library exercises not already present. Returns the count added."""
     records = json.loads(_DATA_FILE.read_text(encoding="utf-8"))
@@ -41,6 +49,7 @@ def seed_exercises(db: Session) -> int:
             Exercise(
                 source_id=source_id,
                 name=item["name"],
+                tracking_type=_tracking_for(item.get("category")),
                 category=item.get("category"),
                 equipment=item.get("equipment"),
                 force=item.get("force"),

@@ -10,7 +10,7 @@ the API physically cannot return a field (like password_hash) unless we list it 
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator
 
 
 class UserCreate(BaseModel):
@@ -66,20 +66,30 @@ class RefreshRequest(BaseModel):
 
 # --- Exercises ---------------------------------------------------------------
 
+_TRACKING_TYPES = {"weight_reps", "reps", "time", "distance_time"}
+
+
 class ExerciseCreate(BaseModel):
     """Body for POST /api/exercises. Only the name is required; the rest mirror
     the fields in the seeded public library and are all optional."""
     name: str = Field(min_length=1, max_length=200)
+    tracking_type: str = "weight_reps"
     category: str | None = Field(default=None, max_length=100)
     equipment: str | None = Field(default=None, max_length=100)
     primary_muscles: list[str] = Field(default_factory=list)
     instructions: list[str] = Field(default_factory=list)
+
+    @field_validator("tracking_type")
+    @classmethod
+    def _known_tracking(cls, v: str) -> str:
+        return v if v in _TRACKING_TYPES else "weight_reps"
 
 
 class ExercisePublic(BaseModel):
     """A single exercise as returned by the API."""
     id: uuid.UUID
     name: str
+    tracking_type: str
     category: str | None
     equipment: str | None
     force: str | None
@@ -97,20 +107,27 @@ class ExercisePublic(BaseModel):
 # --- Workouts --------------------------------------------------------------
 
 class WorkoutSet(BaseModel):
-    """One set. weight/reps stay optional so a half-filled row still saves."""
+    """One set. Only the fields the exercise's tracking mode uses are filled;
+    all stay optional so a half-entered row still saves."""
     weight: float | None = None
     reps: int | None = None
+    seconds: int | None = None
+    distance: float | None = None
     done: bool = False
     # Set by the client when a completed set beats the user's previous best for
     # that exercise. Stored in content so History can show the 🏆 too.
     pr_weight: bool = False
     pr_1rm: bool = False
+    pr_reps: bool = False
+    pr_time: bool = False
+    pr_distance: bool = False
 
 
 class WorkoutExerciseEntry(BaseModel):
     """One exercise within a workout, with its sets."""
     exercise_id: uuid.UUID | None = None
     name: str
+    tracking_type: str = "weight_reps"
     notes: str = ""
     sets: list[WorkoutSet] = Field(default_factory=list)
 
@@ -164,6 +181,9 @@ class ExercisePrevious(BaseModel):
     last_sets: list[WorkoutSet] = Field(default_factory=list)
     best_weight: float | None = None
     best_1rm: float | None = None
+    best_reps: int | None = None
+    best_seconds: int | None = None
+    best_distance: float | None = None
 
 
 class ExerciseSessionStat(BaseModel):
@@ -172,14 +192,18 @@ class ExerciseSessionStat(BaseModel):
     date: datetime
     top_weight: float | None = None
     top_reps: int | None = None
+    top_seconds: int | None = None
+    top_distance: float | None = None
     best_1rm: float | None = None
     volume: float = 0.0
 
 
 class ExerciseStats(BaseModel):
     """Everything the exercise detail screen shows for one exercise."""
+    tracking_type: str = "weight_reps"
     performed_count: int = 0
     last_performed: datetime | None = None
+    # weight_reps
     heaviest_weight: float | None = None
     heaviest_weight_reps: int | None = None
     most_reps: int | None = None
@@ -187,6 +211,13 @@ class ExerciseStats(BaseModel):
     best_1rm: float | None = None
     best_session_volume: float | None = None
     total_volume: float = 0.0
+    # reps / time / distance_time
+    total_reps: int | None = None
+    longest_seconds: int | None = None
+    total_seconds: int | None = None
+    farthest_distance: float | None = None
+    total_distance: float | None = None
+    best_pace: float | None = None   # seconds per mile
     sessions: list[ExerciseSessionStat] = Field(default_factory=list)
 
 
@@ -196,11 +227,14 @@ class RoutineSet(BaseModel):
     """One planned set in a routine template (no 'done' -- that's a workout thing)."""
     weight: float | None = None
     reps: int | None = None
+    seconds: int | None = None
+    distance: float | None = None
 
 
 class RoutineExerciseEntry(BaseModel):
     exercise_id: uuid.UUID | None = None
     name: str
+    tracking_type: str = "weight_reps"
     sets: list[RoutineSet] = Field(default_factory=list)
 
 

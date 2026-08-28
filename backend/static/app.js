@@ -741,31 +741,58 @@ function renderExerciseDetail(ex, body, stats) {
     return;
   }
 
+  const mode = TRACKING[stats.tracking_type] ? stats.tracking_type : "weight_reps";
+  const lb = (n) => (n == null ? "—" : `${fmtVolume(n)}`);
+
   const grid = document.createElement("div");
   grid.className = "exercise-stats";
-  const lb = (n) => (n == null ? "—" : `${fmtVolume(n)}`);
-  grid.append(
-    statTile(
-      "Heaviest set",
-      stats.heaviest_weight == null
-        ? "—"
-        : `${stats.heaviest_weight} × ${stats.heaviest_weight_reps ?? "–"}`,
-    ),
-    statTile("Best est. 1RM", stats.best_1rm == null ? "—" : `~${lb(stats.best_1rm)}`),
-    statTile(
-      "Most reps",
-      stats.most_reps == null
-        ? "—"
-        : `${stats.most_reps} × ${stats.most_reps_weight ?? "–"}`,
-    ),
-    statTile("Best session vol.", lb(stats.best_session_volume)),
-    statTile("Total volume", lb(stats.total_volume)),
-    statTile("Sessions", String(stats.performed_count)),
-  );
+  if (mode === "weight_reps") {
+    grid.append(
+      statTile("Heaviest set",
+        stats.heaviest_weight == null ? "—"
+          : `${stats.heaviest_weight} × ${stats.heaviest_weight_reps ?? "–"}`),
+      statTile("Best est. 1RM", stats.best_1rm == null ? "—" : `~${lb(stats.best_1rm)}`),
+      statTile("Most reps",
+        stats.most_reps == null ? "—"
+          : `${stats.most_reps} × ${stats.most_reps_weight ?? "–"}`),
+      statTile("Best session vol.", lb(stats.best_session_volume)),
+      statTile("Total volume", lb(stats.total_volume)),
+      statTile("Sessions", String(stats.performed_count)),
+    );
+  } else if (mode === "reps") {
+    grid.append(
+      statTile("Best set", stats.most_reps == null ? "—" : `${stats.most_reps} reps`),
+      statTile("Total reps", stats.total_reps == null ? "—" : String(stats.total_reps)),
+      statTile("Sessions", String(stats.performed_count)),
+      statTile("Last", stats.last_performed ? fmtDate(stats.last_performed) : "—"),
+    );
+  } else if (mode === "time") {
+    grid.append(
+      statTile("Longest", stats.longest_seconds == null ? "—" : fmtTime(stats.longest_seconds)),
+      statTile("Total time", stats.total_seconds == null ? "—" : fmtTime(stats.total_seconds)),
+      statTile("Sessions", String(stats.performed_count)),
+      statTile("Last", stats.last_performed ? fmtDate(stats.last_performed) : "—"),
+    );
+  } else {
+    grid.append(
+      statTile("Farthest", fmtMiles(stats.farthest_distance)),
+      statTile("Best pace", fmtPace(stats.best_pace)),
+      statTile("Longest", stats.longest_seconds == null ? "—" : fmtTime(stats.longest_seconds)),
+      statTile("Total distance", fmtMiles(stats.total_distance)),
+      statTile("Total time", stats.total_seconds == null ? "—" : fmtTime(stats.total_seconds)),
+      statTile("Sessions", String(stats.performed_count)),
+    );
+  }
   body.append(grid);
 
+  const CHART = {
+    weight_reps:  { key: "top_weight",   fmt: (n) => String(Math.round(n)) },
+    reps:         { key: "top_reps",     fmt: (n) => String(Math.round(n)) },
+    time:         { key: "top_seconds",  fmt: fmtTime },
+    distance_time:{ key: "top_distance", fmt: (n) => n.toFixed(1) },
+  }[mode];
   if (stats.sessions.length >= 2) {
-    const chart = buildExerciseChart(stats.sessions);
+    const chart = buildExerciseChart(stats.sessions, CHART.key, CHART.fmt);
     if (chart) body.append(chart);
   }
 
@@ -778,9 +805,10 @@ function renderExerciseDetail(ex, body, stats) {
 
     const main = document.createElement("span");
     main.className = "exercise-session-main";
-    const top =
-      s.top_weight == null ? "—" : `${s.top_weight} × ${s.top_reps ?? "–"}`;
-    main.textContent = `${fmtDate(s.date)}  ·  ${top}  ·  ${fmtVolume(s.volume)}`;
+    main.textContent = `${fmtDate(s.date)}  ·  ${setSummary(
+      { weight: s.top_weight, reps: s.top_reps, seconds: s.top_seconds, distance: s.top_distance },
+      mode,
+    )}` + (mode === "weight_reps" ? `  ·  ${fmtVolume(s.volume)}` : "");
 
     const del = document.createElement("button");
     del.type = "button";
@@ -806,10 +834,10 @@ function renderExerciseDetail(ex, body, stats) {
   body.append(list);
 }
 
-// Inline-SVG line chart of heaviest-set weight across sessions (oldest -> newest).
-function buildExerciseChart(sessions) {
+// Inline-SVG line chart of one per-session metric (oldest -> newest).
+function buildExerciseChart(sessions, key = "top_weight", fmtY = (n) => String(Math.round(n))) {
   const pts = sessions
-    .map((s) => ({ date: s.date, y: s.top_weight }))
+    .map((s) => ({ date: s.date, y: s[key] }))
     .filter((p) => p.y != null);
   if (pts.length < 2) return null;
 
@@ -848,8 +876,8 @@ function buildExerciseChart(sessions) {
     t.textContent = text;
     svg.append(t);
   };
-  label(2, y(max) + 3, String(Math.round(max)));
-  label(2, y(min) + 3, String(Math.round(min)));
+  label(2, y(max) + 3, fmtY(max));
+  label(2, y(min) + 3, fmtY(min));
   const d = (iso) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   label(padL, H - 4, d(pts[0].date), "start");
   label(W - padR, H - 4, d(pts[pts.length - 1].date), "end");
@@ -889,6 +917,7 @@ addExerciseForm.addEventListener("submit", async (event) => {
   // seeded library (which is all lower-case) and the filters don't fragment.
   const payload = {
     name,
+    tracking_type: document.getElementById("ex-tracking").value,
     category: document.getElementById("ex-category").value.trim().toLowerCase() || null,
     equipment: document.getElementById("ex-equipment").value.trim().toLowerCase() || null,
     primary_muscles: splitList(document.getElementById("ex-muscles").value, ",").map((m) =>
@@ -950,6 +979,82 @@ function epley1rm(w, r) {
   return (Number(w) || 0) * (1 + (Number(r) || 0) / 30);
 }
 
+// --- Exercise tracking modes ---------------------------------------------
+const TRACKING = {
+  weight_reps:  { fields: ["weight", "reps"],     heads: ["LBS", "REPS"] },
+  reps:         { fields: ["reps"],               heads: ["REPS"] },
+  time:         { fields: ["seconds"],            heads: ["TIME"] },
+  distance_time:{ fields: ["distance", "seconds"], heads: ["MI", "TIME"] },
+};
+
+function trackingOf(entry) {
+  const t = entry && entry.tracking_type;
+  return TRACKING[t] ? t : "weight_reps";
+}
+
+function emptySetFor(mode, extra = {}) {
+  const s = { ...extra };
+  for (const f of (TRACKING[mode] || TRACKING.weight_reps).fields) s[f] = null;
+  return s;
+}
+
+function parseTime(v) {
+  v = String(v == null ? "" : v).trim();
+  if (!v) return null;
+  if (v.includes(":")) {
+    let sec = 0;
+    for (const p of v.split(":")) sec = sec * 60 + (parseInt(p, 10) || 0);
+    return sec || null;
+  }
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n : null;
+}
+const fmtTime = (sec) => formatDuration((Number(sec) || 0) * 1000);
+const fmtMiles = (n) => (n == null ? "–" : `${Number(n).toFixed(1)} mi`);
+const fmtPace = (secPerMi) =>
+  secPerMi == null ? "–" : `${formatDuration(secPerMi * 1000)} /mi`;
+
+// Per-metric input behaviour.
+const FIELD_META = {
+  weight:   { mode: "decimal", parse: (v) => numOrNull(parseFloat(v)), show: (v) => v ?? "" },
+  reps:     { mode: "numeric", parse: (v) => numOrNull(parseInt(v, 10)), show: (v) => v ?? "" },
+  distance: { mode: "decimal", parse: (v) => numOrNull(parseFloat(v)), show: (v) => v ?? "" },
+  seconds:  { mode: "numeric", parse: parseTime, show: (v) => (v == null ? "" : fmtTime(v)) },
+};
+const numOrNull = (n) => (Number.isFinite(n) ? n : null);
+
+// Compact one-line summary of a set for the PREV column / read-only views.
+function setSummary(set, mode) {
+  if (!set) return "–";
+  mode = TRACKING[mode] ? mode : "weight_reps";
+  if (mode === "weight_reps") {
+    if (set.weight == null && set.reps == null) return "–";
+    return `${set.weight ?? "–"}×${set.reps ?? "–"}`;
+  }
+  if (mode === "reps") return set.reps == null ? "–" : String(set.reps);
+  if (mode === "time") return set.seconds == null ? "–" : fmtTime(set.seconds);
+  if (set.distance == null && set.seconds == null) return "–";
+  return `${set.distance == null ? "–" : Number(set.distance).toFixed(1) + "mi"}·${
+    set.seconds == null ? "–" : fmtTime(set.seconds)
+  }`;
+}
+
+// The CSS grid-template-columns for a sets grid of a given mode.
+//   withPrev/withDone add the PREV and ✓ columns (workout view only).
+function setsGridCols(mode, { withPrev = true, withDone = true } = {}) {
+  const t = TRACKING[mode] || TRACKING.weight_reps;
+  return [
+    "1.7rem",
+    ...(withPrev ? ["3.6rem"] : []),
+    ...t.fields.map(() => "minmax(0, 1fr)"),
+    ...(withDone ? ["1.8rem"] : []),
+    "1.2rem",
+  ].join(" ");
+}
+function anyPr(set) {
+  return !!(set.pr_weight || set.pr_1rm || set.pr_reps || set.pr_time || set.pr_distance);
+}
+
 async function loadPreviousForWorkout() {
   previousByExercise = {};
   const ids = [
@@ -980,11 +1085,12 @@ function autofillFromPrevious() {
   for (const entry of activeWorkout.content.exercises) {
     const prev = previousByExercise[entry.exercise_id];
     if (!prev || !prev.last_sets || !prev.last_sets.length) continue;
+    const fields = TRACKING[trackingOf(entry)].fields;
     entry.sets.forEach((set, i) => {
       const last = prev.last_sets[i];
-      if (last && set.weight == null && set.reps == null && !set.done) {
-        set.weight = last.weight ?? null;
-        set.reps = last.reps ?? null;
+      if (!last || set.done) return;
+      if (fields.every((f) => set[f] == null)) {
+        for (const f of fields) set[f] = last[f] ?? null;
         changed = true;
       }
     });
@@ -1122,11 +1228,14 @@ function buildExerciseBlock(entry, exIndex) {
   restLabel.addEventListener("click", openRestEditor);
   block.append(restLabel);
 
+  const mode = trackingOf(entry);
+  const t = TRACKING[mode];
   const prev = previousByExercise[entry.exercise_id];
 
   const grid = document.createElement("div");
   grid.className = "sets-grid";
-  for (const label of ["SET", "PREV", "LBS", "REPS", "✓", ""]) {
+  grid.style.gridTemplateColumns = setsGridCols(mode);
+  for (const label of ["SET", "PREV", ...t.heads, "✓", ""]) {
     const cell = document.createElement("div");
     cell.className = "sets-grid-head";
     cell.textContent = label;
@@ -1136,39 +1245,30 @@ function buildExerciseBlock(entry, exIndex) {
   entry.sets.forEach((set, setIndex) => {
     const num = document.createElement("div");
     num.className = "set-num";
-    if (set.pr_weight || set.pr_1rm) num.classList.add("set-num--pr");
+    if (anyPr(set)) num.classList.add("set-num--pr");
     num.textContent = String(setIndex + 1);
 
     const prevCell = document.createElement("div");
     prevCell.className = "set-prev";
-    const last = prev && prev.last_sets && prev.last_sets[setIndex];
-    prevCell.textContent =
-      last && (last.weight != null || last.reps != null)
-        ? `${last.weight ?? "–"}×${last.reps ?? "–"}`
-        : "–";
+    prevCell.textContent = setSummary(
+      prev && prev.last_sets && prev.last_sets[setIndex],
+      mode,
+    );
 
-    const weight = document.createElement("input");
-    weight.className = "set-input";
-    weight.type = "text";
-    weight.inputMode = "decimal";
-    weight.value = set.weight ?? "";
-    weight.addEventListener("input", () => {
-      const n = parseFloat(weight.value);
-      set.weight = Number.isFinite(n) ? n : null;
-      updateWorkoutStats();
-      scheduleSave();
-    });
-
-    const reps = document.createElement("input");
-    reps.className = "set-input";
-    reps.type = "text";
-    reps.inputMode = "numeric";
-    reps.value = set.reps ?? "";
-    reps.addEventListener("input", () => {
-      const n = parseInt(reps.value, 10);
-      set.reps = Number.isFinite(n) ? n : null;
-      updateWorkoutStats();
-      scheduleSave();
+    const inputs = t.fields.map((f) => {
+      const meta = FIELD_META[f];
+      const inp = document.createElement("input");
+      inp.className = "set-input" + (f === "seconds" ? " set-input--time" : "");
+      inp.type = "text";
+      inp.inputMode = meta.mode;
+      if (f === "seconds") inp.placeholder = "m:ss";
+      inp.value = meta.show(set[f]);
+      inp.addEventListener("input", () => {
+        set[f] = meta.parse(inp.value);
+        updateWorkoutStats();
+        scheduleSave();
+      });
+      return inp;
     });
 
     const doneWrap = document.createElement("div");
@@ -1183,8 +1283,7 @@ function buildExerciseBlock(entry, exIndex) {
         checkForPr(entry, set, num);
         startRestTimer();
       } else {
-        set.pr_weight = false;
-        set.pr_1rm = false;
+        set.pr_weight = set.pr_1rm = set.pr_reps = set.pr_time = set.pr_distance = false;
         num.classList.remove("set-num--pr");
       }
       block.classList.toggle("has-done-sets", entry.sets.some((s) => s.done));
@@ -1204,7 +1303,7 @@ function buildExerciseBlock(entry, exIndex) {
       scheduleSave();
     });
 
-    grid.append(num, prevCell, weight, reps, doneWrap, removeSet);
+    grid.append(num, prevCell, ...inputs, doneWrap, removeSet);
   });
 
   block.append(grid);
@@ -1214,7 +1313,7 @@ function buildExerciseBlock(entry, exIndex) {
   addSet.className = "ghost workout-add-set";
   addSet.textContent = "+ Add Set";
   addSet.addEventListener("click", () => {
-    entry.sets.push({ weight: null, reps: null, done: false });
+    entry.sets.push(emptySetFor(mode, { done: false }));
     renderWorkout();
     scheduleSave();
   });
@@ -1230,10 +1329,11 @@ function updateWorkoutStats() {
   let volume = 0;
   let doneCount = 0;
   for (const entry of activeWorkout.content.exercises) {
+    const weightMode = trackingOf(entry) === "weight_reps";
     for (const set of entry.sets) {
       if (!set.done) continue;
       doneCount += 1;
-      volume += (Number(set.weight) || 0) * (Number(set.reps) || 0);
+      if (weightMode) volume += (Number(set.weight) || 0) * (Number(set.reps) || 0);
     }
   }
 
@@ -1242,34 +1342,53 @@ function updateWorkoutStats() {
   workoutSetsEl.textContent = String(doneCount);
 }
 
-// When a set is completed, see if it beats the user's best weight / best 1RM for
-// this exercise. The first completed set of an exercise with no history just
-// establishes the baseline (no PR shout).
+// When a set is completed, see if it beats the user's best for this exercise in
+// its tracking mode. First completed set of an exercise with no history just
+// sets the baseline (no shout).
 function checkForPr(entry, set, numEl) {
-  const w = Number(set.weight) || 0;
-  const r = Number(set.reps) || 0;
-  if (w <= 0) return;
-
   const prev = entry.exercise_id ? previousByExercise[entry.exercise_id] : null;
   if (!prev) return;   // custom exercise with no id -> can't track
+  const mode = trackingOf(entry);
+  let hit = null;
 
-  const e1 = epley1rm(w, r);
-  const weightPr = prev.best_weight != null && w > prev.best_weight;
-  const oneRmPr = r > 0 && prev.best_1rm != null && e1 > prev.best_1rm;
+  if (mode === "weight_reps") {
+    const w = Number(set.weight) || 0;
+    const r = Number(set.reps) || 0;
+    if (w <= 0) return;
+    const e1 = epley1rm(w, r);
+    const wPr = prev.best_weight != null && w > prev.best_weight;
+    const rPr = r > 0 && prev.best_1rm != null && e1 > prev.best_1rm;
+    set.pr_weight = wPr;
+    set.pr_1rm = rPr;
+    if (prev.best_weight == null || w > prev.best_weight) prev.best_weight = w;
+    if (r > 0 && (prev.best_1rm == null || e1 > prev.best_1rm)) prev.best_1rm = e1;
+    const parts = [];
+    if (wPr) parts.push(`Weight PR — ${w} lb`);
+    if (rPr) parts.push(`1RM PR — ~${Math.round(e1)} lb`);
+    hit = parts.join("    ") || null;
+  } else if (mode === "reps") {
+    const r = Number(set.reps) || 0;
+    if (r <= 0) return;
+    set.pr_reps = prev.best_reps != null && r > prev.best_reps;
+    if (prev.best_reps == null || r > prev.best_reps) prev.best_reps = r;
+    hit = set.pr_reps ? `Reps PR — ${r}` : null;
+  } else if (mode === "time") {
+    const s = Number(set.seconds) || 0;
+    if (s <= 0) return;
+    set.pr_time = prev.best_seconds != null && s > prev.best_seconds;
+    if (prev.best_seconds == null || s > prev.best_seconds) prev.best_seconds = s;
+    hit = set.pr_time ? `Time PR — ${fmtTime(s)}` : null;
+  } else if (mode === "distance_time") {
+    const d = Number(set.distance) || 0;
+    if (d <= 0) return;
+    set.pr_distance = prev.best_distance != null && d > prev.best_distance;
+    if (prev.best_distance == null || d > prev.best_distance) prev.best_distance = d;
+    hit = set.pr_distance ? `Distance PR — ${d.toFixed(1)} mi` : null;
+  }
 
-  set.pr_weight = weightPr;
-  set.pr_1rm = oneRmPr;
-
-  // Raise the bar (also sets the baseline the first time round).
-  if (prev.best_weight == null || w > prev.best_weight) prev.best_weight = w;
-  if (r > 0 && (prev.best_1rm == null || e1 > prev.best_1rm)) prev.best_1rm = e1;
-
-  if (weightPr || oneRmPr) {
+  if (hit) {
     numEl.classList.add("set-num--pr");
-    const kinds = [];
-    if (weightPr) kinds.push(`Weight PR — ${w} lb`);
-    if (oneRmPr) kinds.push(`1RM PR — ~${Math.round(e1)} lb`);
-    showToast("🏆 " + kinds.join("    "));
+    showToast("🏆 " + hit);
   }
 }
 
@@ -1510,11 +1629,13 @@ workoutAddExerciseBtn.addEventListener("click", () => {
 
 function addExerciseToWorkout(ex) {
   ensureContent();
+  const mode = TRACKING[ex.tracking_type] ? ex.tracking_type : "weight_reps";
   activeWorkout.content.exercises.push({
     exercise_id: ex.id,
     name: ex.name,
+    tracking_type: mode,
     notes: "",
-    sets: [{ weight: null, reps: null, done: false }],
+    sets: [emptySetFor(mode, { done: false })],
   });
   scheduleSave();
   closeExercises();          // back to the workout view
@@ -1549,11 +1670,19 @@ async function maybeSyncRoutineFromWorkout() {
   if (!confirm(`Save these changes to routine "${routine.name}"?`)) return;
 
   const content = {
-    exercises: activeWorkout.content.exercises.map((entry) => ({
-      exercise_id: entry.exercise_id ?? null,
-      name: entry.name,
-      sets: entry.sets.map((s) => ({ weight: s.weight ?? null, reps: s.reps ?? null })),
-    })),
+    exercises: activeWorkout.content.exercises.map((entry) => {
+      const fields = TRACKING[trackingOf(entry)].fields;
+      return {
+        exercise_id: entry.exercise_id ?? null,
+        name: entry.name,
+        tracking_type: trackingOf(entry),
+        sets: entry.sets.map((s) => {
+          const out = {};
+          for (const f of fields) out[f] = s[f] ?? null;
+          return out;
+        }),
+      };
+    }),
   };
 
   try {
@@ -1851,9 +1980,16 @@ function buildRoutineExerciseBlock(entry, exIndex) {
   head.append(name, removeEx);
   block.append(head);
 
+  const mode = trackingOf(entry);
+  const t = TRACKING[mode];
+
   const grid = document.createElement("div");
   grid.className = "sets-grid sets-grid--template";
-  for (const label of ["SET", "LBS", "REPS", ""]) {
+  grid.style.gridTemplateColumns = setsGridCols(mode, {
+    withPrev: false,
+    withDone: false,
+  });
+  for (const label of ["SET", ...t.heads, ""]) {
     const cell = document.createElement("div");
     cell.className = "sets-grid-head";
     cell.textContent = label;
@@ -1865,24 +2001,16 @@ function buildRoutineExerciseBlock(entry, exIndex) {
     num.className = "set-num";
     num.textContent = String(setIndex + 1);
 
-    const weight = document.createElement("input");
-    weight.className = "set-input";
-    weight.type = "text";
-    weight.inputMode = "decimal";
-    weight.value = set.weight ?? "";
-    weight.addEventListener("input", () => {
-      const n = parseFloat(weight.value);
-      set.weight = Number.isFinite(n) ? n : null;
-    });
-
-    const reps = document.createElement("input");
-    reps.className = "set-input";
-    reps.type = "text";
-    reps.inputMode = "numeric";
-    reps.value = set.reps ?? "";
-    reps.addEventListener("input", () => {
-      const n = parseInt(reps.value, 10);
-      set.reps = Number.isFinite(n) ? n : null;
+    const inputs = t.fields.map((f) => {
+      const meta = FIELD_META[f];
+      const inp = document.createElement("input");
+      inp.className = "set-input" + (f === "seconds" ? " set-input--time" : "");
+      inp.type = "text";
+      inp.inputMode = meta.mode;
+      if (f === "seconds") inp.placeholder = "m:ss";
+      inp.value = meta.show(set[f]);
+      inp.addEventListener("input", () => { set[f] = meta.parse(inp.value); });
+      return inp;
     });
 
     const removeSet = document.createElement("button");
@@ -1895,7 +2023,7 @@ function buildRoutineExerciseBlock(entry, exIndex) {
       renderRoutineEditor();
     });
 
-    grid.append(num, weight, reps, removeSet);
+    grid.append(num, ...inputs, removeSet);
   });
 
   block.append(grid);
@@ -1905,7 +2033,7 @@ function buildRoutineExerciseBlock(entry, exIndex) {
   addSet.className = "ghost workout-add-set";
   addSet.textContent = "+ Add Set";
   addSet.addEventListener("click", () => {
-    entry.sets.push({ weight: null, reps: null });
+    entry.sets.push(emptySetFor(mode));
     renderRoutineEditor();
   });
   block.append(addSet);
@@ -1918,10 +2046,12 @@ routineAddExerciseBtn.addEventListener("click", () => {
 });
 
 function addExerciseToRoutine(ex) {
+  const mode = TRACKING[ex.tracking_type] ? ex.tracking_type : "weight_reps";
   editingRoutine.content.exercises.push({
     exercise_id: ex.id,
     name: ex.name,
-    sets: [{ weight: null, reps: null }],
+    tracking_type: mode,
+    sets: [emptySetFor(mode)],
   });
   closeExercises();          // back to the routine editor
   renderRoutineEditor();
@@ -2175,9 +2305,15 @@ function renderWorkoutReadonly(container, content) {
       block.append(notes);
     }
 
+    const mode = trackingOf(entry);
+    const t = TRACKING[mode];
     const grid = document.createElement("div");
     grid.className = "sets-grid sets-grid--readonly";
-    for (const label of ["SET", "LBS", "REPS", ""]) {
+    grid.style.gridTemplateColumns = setsGridCols(mode, {
+      withPrev: false,
+      withDone: false,
+    }).replace(/1\.2rem$/, "2.5rem");   // the last col is the ✓/🏆 mark
+    for (const label of ["SET", ...t.heads, ""]) {
       const cell = document.createElement("div");
       cell.className = "sets-grid-head";
       cell.textContent = label;
@@ -2189,22 +2325,21 @@ function renderWorkoutReadonly(container, content) {
       num.className = "set-num";
       num.textContent = String(i + 1);
 
-      const weight = document.createElement("div");
-      weight.className = "set-readonly";
-      weight.textContent = set.weight ?? "–";
-
-      const reps = document.createElement("div");
-      reps.className = "set-readonly";
-      reps.textContent = set.reps ?? "–";
+      const cells = t.fields.map((f) => {
+        const c = document.createElement("div");
+        c.className = "set-readonly";
+        c.textContent = FIELD_META[f].show(set[f]) || "–";
+        return c;
+      });
 
       const mark = document.createElement("div");
       mark.className = "set-readonly";
       const bits = [];
       if (set.done) bits.push("✓");
-      if (set.pr_weight || set.pr_1rm) bits.push("🏆");
+      if (anyPr(set)) bits.push("🏆");
       mark.textContent = bits.join(" ");
 
-      grid.append(num, weight, reps, mark);
+      grid.append(num, ...cells, mark);
     });
 
     block.append(grid);

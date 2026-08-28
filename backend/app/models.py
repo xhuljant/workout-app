@@ -97,6 +97,12 @@ class Exercise(Base):
 
     name: Mapped[str] = mapped_column(String, index=True, nullable=False)
 
+    # How sets of this exercise are logged: "weight_reps" (default), "reps",
+    # "time", or "distance_time". Seeded rows are classified from `category`.
+    tracking_type: Mapped[str] = mapped_column(
+        String, nullable=False, server_default="weight_reps", default="weight_reps"
+    )
+
     # All optional -- the public data leaves some of these blank, and the add
     # form only requires a name.
     category: Mapped[str | None] = mapped_column(String, nullable=True)

@@ -51,6 +51,13 @@ def exercise_stats(
 ):
     """The current user's history for one exercise: per-session numbers plus
     all-time bests. Only completed sets from finished, non-deleted workouts."""
+    exercise = (
+        db.query(Exercise)
+        .filter(Exercise.id == exercise_id, Exercise.deleted_at.is_(None))
+        .first()
+    )
+    mode = exercise.tracking_type if exercise else "weight_reps"
+
     target = str(exercise_id)
     workouts = (
         db.query(Workout)
@@ -63,11 +70,13 @@ def exercise_stats(
         .all()
     )
 
-    stats = ExerciseStats()
+    stats = ExerciseStats(tracking_type=mode)
     for w in workouts:
-        top_w = top_r = None
+        top_w = top_r = top_s = top_d = None
         best_1rm = None
         volume = 0.0
+        sess_reps = sess_seconds = 0
+        sess_distance = 0.0
         did_something = False
 
         for entry in (w.content or {}).get("exercises", []):
@@ -78,20 +87,43 @@ def exercise_stats(
                     continue
                 wt = s.get("weight") or 0
                 rp = s.get("reps") or 0
+                sec = s.get("seconds") or 0
+                dist = s.get("distance") or 0
                 did_something = True
+
                 volume += wt * rp
+                sess_reps += rp
+                sess_seconds += sec
+                sess_distance += dist
+
                 if wt and (top_w is None or wt > top_w):
                     top_w, top_r = wt, rp
+                if rp and (top_r is None or rp > top_r):
+                    top_r = rp
+                if sec and (top_s is None or sec > top_s):
+                    top_s = sec
+                if dist and (top_d is None or dist > top_d):
+                    top_d = dist
                 if wt and rp:
                     e = round(wt * (1 + rp / 30), 1)
                     if best_1rm is None or e > best_1rm:
                         best_1rm = e
-                # heaviest single set (all-time)
+
+                # all-time bests
                 if wt and (stats.heaviest_weight is None or wt > stats.heaviest_weight):
                     stats.heaviest_weight, stats.heaviest_weight_reps = wt, rp
-                # most reps in a single set (all-time)
                 if rp and (stats.most_reps is None or rp > stats.most_reps):
                     stats.most_reps, stats.most_reps_weight = rp, wt
+                if sec and (stats.longest_seconds is None or sec > stats.longest_seconds):
+                    stats.longest_seconds = sec
+                if dist and (
+                    stats.farthest_distance is None or dist > stats.farthest_distance
+                ):
+                    stats.farthest_distance = dist
+                if dist and sec:
+                    pace = sec / dist
+                    if stats.best_pace is None or pace < stats.best_pace:
+                        stats.best_pace = round(pace, 1)
 
         if not did_something:
             continue
@@ -100,6 +132,9 @@ def exercise_stats(
         stats.performed_count += 1
         stats.last_performed = when
         stats.total_volume += volume
+        stats.total_reps = (stats.total_reps or 0) + sess_reps
+        stats.total_seconds = (stats.total_seconds or 0) + sess_seconds
+        stats.total_distance = round((stats.total_distance or 0) + sess_distance, 2)
         if best_1rm is not None and (stats.best_1rm is None or best_1rm > stats.best_1rm):
             stats.best_1rm = best_1rm
         if stats.best_session_volume is None or volume > stats.best_session_volume:
@@ -110,6 +145,8 @@ def exercise_stats(
                 date=when,
                 top_weight=top_w,
                 top_reps=top_r,
+                top_seconds=top_s,
+                top_distance=top_d,
                 best_1rm=best_1rm,
                 volume=volume,
             )
@@ -127,6 +164,7 @@ def create_exercise(
     """Add a custom exercise to the shared library."""
     exercise = Exercise(
         name=body.name.strip(),
+        tracking_type=body.tracking_type,
         category=(body.category or None),
         equipment=(body.equipment or None),
         primary_muscles=[m.strip() for m in body.primary_muscles if m.strip()],
