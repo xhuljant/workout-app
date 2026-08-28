@@ -503,8 +503,12 @@ async function loadExercises() {
   }
 }
 
-// From the loaded library: rebuild the filter dropdowns, and the datalists that
-// suggest values on the "New exercise" form.
+// Distinct taxonomy values from the loaded library, feeding both the filter
+// dropdowns and the "New exercise" form's suggestion menus.
+let equipmentOptions = [];
+let muscleOptions = [];
+let categoryOptions = [];
+
 function populateExerciseOptions() {
   const equip = new Set();
   const muscles = new Set();
@@ -514,28 +518,75 @@ function populateExerciseOptions() {
     if (ex.category) categories.add(ex.category);
     for (const m of ex.primary_muscles || []) muscles.add(m);
   }
-  const equipSorted = [...equip].sort();
-  const muscleSorted = [...muscles].sort();
+  equipmentOptions = [...equip].sort();
+  muscleOptions = [...muscles].sort();
+  categoryOptions = [...categories].sort();
 
-  fillOptions(filterEquipmentSel, "All equipment", equipSorted);
-  fillOptions(filterMuscleSel, "All body parts", muscleSorted);
-
-  fillDatalist("category-options", [...categories].sort());
-  fillDatalist("equipment-options", equipSorted);
-  fillDatalist("muscle-options", muscleSorted);
+  fillOptions(filterEquipmentSel, "All equipment", equipmentOptions);
+  fillOptions(filterMuscleSel, "All body parts", muscleOptions);
 }
 
-function fillDatalist(id, values) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.replaceChildren(
-    ...values.map((v) => {
-      const o = document.createElement("option");
-      o.value = v;
-      return o;
-    }),
-  );
+// A cross-platform autocomplete menu (native <datalist> is unreliable on iOS).
+// getOptions() returns the current candidate list; `multi` treats the input as
+// a comma-separated list and completes the segment after the last comma.
+function attachSuggest(input, getOptions, { multi = false } = {}) {
+  const field = input.closest(".field") || input.parentElement;
+  field.classList.add("field--suggest");
+  const menu = document.createElement("div");
+  menu.className = "suggest-menu";
+  menu.hidden = true;
+  field.append(menu);
+
+  const currentToken = () => {
+    const raw = multi ? input.value.split(",").pop() : input.value;
+    return raw.trim();
+  };
+  const setToken = (val) => {
+    if (!multi) { input.value = val; return; }
+    const parts = input.value.split(",");
+    parts[parts.length - 1] = ` ${val}`;
+    input.value = parts.join(",").trimStart();
+  };
+
+  function render() {
+    const t = currentToken().toLowerCase();
+    const chosen = multi
+      ? new Set(input.value.split(",").map((s) => s.trim().toLowerCase()))
+      : new Set();
+    const matches = getOptions()
+      .filter((o) => o.toLowerCase().includes(t) && !chosen.has(o.toLowerCase()))
+      .slice(0, 8);
+    if (!matches.length || (matches.length === 1 && matches[0].toLowerCase() === t)) {
+      menu.hidden = true;
+      return;
+    }
+    menu.replaceChildren(
+      ...matches.map((o) => {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "suggest-item";
+        item.textContent = o;
+        item.addEventListener("mousedown", (e) => {
+          e.preventDefault();   // fire before the input's blur, keep focus
+          setToken(o);
+          menu.hidden = true;
+          input.focus();
+        });
+        return item;
+      }),
+    );
+    menu.hidden = false;
+  }
+
+  input.addEventListener("input", render);
+  input.addEventListener("focus", render);
+  input.addEventListener("blur", () => setTimeout(() => { menu.hidden = true; }, 150));
+  input.addEventListener("keydown", (e) => { if (e.key === "Escape") menu.hidden = true; });
 }
+
+attachSuggest(document.getElementById("ex-category"), () => categoryOptions);
+attachSuggest(document.getElementById("ex-equipment"), () => equipmentOptions);
+attachSuggest(document.getElementById("ex-muscles"), () => muscleOptions, { multi: true });
 
 function fillOptions(sel, allLabel, values) {
   const keep = sel.value;

@@ -508,6 +508,37 @@ button.settings-section { width: 100%; }
 }
 .exercise-filters select.is-active { border-color: var(--accent); color: var(--accent); }
 
+/* Custom autocomplete menu for the "New exercise" taxonomy fields */
+.field--suggest { position: relative; }
+.suggest-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  margin-top: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+}
+.suggest-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 15px;
+  cursor: pointer;
+}
+.suggest-item:last-child { border-bottom: 0; }
+.suggest-item:hover { background: var(--surface-2); }
+
 .exercise-status {
   margin: 0 0 10px;
   font-size: 12px;
