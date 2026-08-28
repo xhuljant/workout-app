@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=11" />
+  <link rel="stylesheet" href="/style.css?v=12" />
 </head>
 <body>
   <main class="card">
@@ -56,7 +56,9 @@
         <button id="logout" class="ghost" type="button">Log out</button>
       </div>
 
-      <button id="start-empty" class="action action--wide" type="button">Start empty workout</button>
+      <button id="start-empty" class="action action--wide" type="button">
+        <span id="start-empty-label">Start empty workout</span><span id="start-empty-time" class="start-empty-time"></span>
+      </button>
 
       <div class="action-row">
         <button id="new-routine" class="action" type="button">New Routine</button>
@@ -200,15 +202,9 @@
     </section>
   </main>
 
-  <!-- Floating "jump back to the workout in progress". Shown only while a
-       workout is active and the user is looking at some other screen. -->
-  <button id="workout-fab" class="workout-fab" type="button" hidden>
-    Resume workout <span id="workout-fab-time" class="workout-fab-time"></span>
-  </button>
-
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=11"></script>
+  <script src="/app.js?v=12"></script>
 </body>
 </html>

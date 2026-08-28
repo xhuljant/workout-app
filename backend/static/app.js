@@ -55,6 +55,8 @@ const addExerciseSubmit = document.getElementById("add-exercise-submit");
 
 // Active workout sub-view
 const startEmptyBtn = document.getElementById("start-empty");
+const startEmptyLabelEl = document.getElementById("start-empty-label");
+const startEmptyTimeEl = document.getElementById("start-empty-time");
 const workoutView = document.getElementById("workout-view");
 const workoutBack = document.getElementById("workout-back");
 const workoutDurationEl = document.getElementById("workout-duration");
@@ -65,8 +67,6 @@ const workoutEmptyEl = document.getElementById("workout-empty");
 const workoutAddExerciseBtn = document.getElementById("workout-add-exercise");
 const workoutFinishBtn = document.getElementById("workout-finish");
 const workoutDiscardBtn = document.getElementById("workout-discard");
-const workoutFab = document.getElementById("workout-fab");
-const workoutFabTime = document.getElementById("workout-fab-time");
 const toastEl = document.getElementById("toast");
 
 // Routine editor sub-view
@@ -193,7 +193,6 @@ const ALL_VIEWS = [
 
 function showView(el) {
   for (const v of ALL_VIEWS) v.hidden = v !== el;
-  updateWorkoutFab();
 }
 
 function showLoggedIn(user) {
@@ -212,7 +211,7 @@ function showLoggedOut() {
   for (const v of ALL_VIEWS) v.hidden = true;
   stopDurationTimer();
   activeWorkout = null;
-  updateWorkoutFab();
+  refreshStartButton();
 }
 
 // One row per routine: tap the name to start a workout from it, ▲/▼ to reorder,
@@ -565,23 +564,19 @@ async function loadActiveWorkout() {
     activeWorkout = null;
   }
   refreshStartButton();
-  updateWorkoutFab();
 }
 
+// The single entry point to the active workout. Blue "Start empty workout" when
+// idle; green "Resume workout <elapsed>" (ticking) while a workout is in
+// progress. Also (re)starts the duration timer so the elapsed time stays live
+// even when we're not on the workout screen (e.g. after a reload).
 function refreshStartButton() {
-  startEmptyBtn.textContent = activeWorkout ? "Resume workout" : "Start empty workout";
+  const active = Boolean(activeWorkout);
+  startEmptyLabelEl.textContent = active ? "Resume workout" : "Start empty workout";
+  startEmptyBtn.classList.toggle("action--active", active);
+  if (!active) startEmptyTimeEl.textContent = "";
+  if (active && !durationTimer) startDurationTimer();
 }
-
-// The floating button shows only when a workout is active AND the user is on some
-// other screen. Also makes sure the duration timer is ticking so its label stays
-// live even after a reload lands the user on the home screen.
-function updateWorkoutFab() {
-  const show = Boolean(activeWorkout) && workoutView.hidden;
-  workoutFab.hidden = !show;
-  if (show && !durationTimer) startDurationTimer();
-}
-
-workoutFab.addEventListener("click", () => openWorkout());
 
 function ensureContent() {
   if (!activeWorkout.content) activeWorkout.content = { exercises: [] };
@@ -615,11 +610,12 @@ function openWorkout() {
   showView(workoutView);
   renderWorkout();
   startDurationTimer();
-  loadPreviousForWorkout();   // fills the PREVIOUS column + autofills, then re-renders
+  refreshStartButton();      // turn the home button green + start the elapsed clock
+  loadPreviousForWorkout();  // fills the PREVIOUS column + autofills, then re-renders
 }
 
 // Back arrow: leave the workout running (it's saved server-side) and go home.
-// The duration timer keeps running so the floating button's label stays live.
+// The duration timer keeps running so the home button's elapsed time stays live.
 function closeWorkout() {
   flushWorkoutSave();
   refreshStartButton();
@@ -843,7 +839,7 @@ function startDurationTimer() {
     if (!activeWorkout) return stopDurationTimer();
     const label = formatDuration(Date.now() - Date.parse(activeWorkout.started_at));
     workoutDurationEl.textContent = label;
-    workoutFabTime.textContent = label;
+    startEmptyTimeEl.textContent = label;
   };
   tick();
   durationTimer = setInterval(tick, 1000);
@@ -852,7 +848,7 @@ function startDurationTimer() {
 function stopDurationTimer() {
   if (durationTimer) clearInterval(durationTimer);
   durationTimer = null;
-  workoutFabTime.textContent = "";
+  startEmptyTimeEl.textContent = "";
 }
 
 function formatDuration(ms) {

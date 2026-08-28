@@ -11,6 +11,8 @@
   --muted: #9a9aa6;
   --accent: #2f81f7;      /* blue */
   --accent-press: #2568c9;
+  --active: #22c55e;      /* green -- a workout is in progress */
+  --active-press: #16a34a;
   --error: #ff6b6b;
   --ok: #4ade80;
   --radius: 14px;
@@ -196,6 +198,17 @@ body {
 .action:active { transform: translateY(1px); }
 
 .action--wide { margin-bottom: 14px; }
+
+/* "Start empty workout" turns green while a workout is in progress */
+.action--active { background: var(--active); }
+.action--active:hover { background: var(--active-press); }
+.start-empty-time {
+  margin-left: 10px;
+  font-weight: 600;
+  opacity: 0.9;
+  font-variant-numeric: tabular-nums;
+}
+.start-empty-time:empty { display: none; }
 
 /* "New Routine" / "Exercises" side by side */
 .action-row {
@@ -607,41 +620,11 @@ body {
 }
 .workout-discard:hover { border-color: var(--error); }
 
-/* Floating "resume workout" button, pinned to the bottom of the viewport */
-.workout-fab {
-  position: fixed;
-  left: 50%;
-  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
-  transform: translateX(-50%);
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 24px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 15px;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  transition: background 120ms ease, transform 60ms ease;
-}
-.workout-fab:hover { background: var(--accent-press); }
-.workout-fab:active { transform: translateX(-50%) translateY(1px); }
-.workout-fab-time {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  opacity: 0.85;
-}
-.workout-fab-time:empty { display: none; }
-
-/* Transient PR toast, above the resume-fab / rest-timer slot */
+/* Transient PR toast */
 .toast {
   position: fixed;
   left: 50%;
-  bottom: calc(90px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   z-index: 1100;
   max-width: calc(100% - 32px);
