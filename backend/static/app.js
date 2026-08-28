@@ -36,6 +36,7 @@ const submitBtn = document.getElementById("submit");
 const messageEl = document.getElementById("message");
 const home = document.getElementById("home");
 const whoEl = document.getElementById("who");
+const settingsBtn = document.getElementById("settings-btn");
 const logoutBtn = document.getElementById("logout");
 const passwordInput = document.getElementById("password");
 const routineList = document.getElementById("routine-list");
@@ -94,6 +95,26 @@ const historyDetailBackBtn = document.getElementById("history-detail-back");
 const historyDetailTitleEl = document.getElementById("history-detail-title");
 const historyDetailMetaEl = document.getElementById("history-detail-meta");
 const historyDetailExercisesEl = document.getElementById("history-detail-exercises");
+
+// Settings sub-view
+const settingsView = document.getElementById("settings-view");
+const settingsBackBtn = document.getElementById("settings-back");
+const settingsProfileForm = document.getElementById("settings-profile-form");
+const settingsProfileMsg = document.getElementById("settings-profile-msg");
+const setNameInput = document.getElementById("set-name");
+const setEmailInput = document.getElementById("set-email");
+const setRestInput = document.getElementById("set-rest");
+const settingsPasswordForm = document.getElementById("settings-password-form");
+const settingsPasswordMsg = document.getElementById("settings-password-msg");
+const setCurPwInput = document.getElementById("set-cur-pw");
+const setNewPwInput = document.getElementById("set-new-pw");
+const settingsExportBtn = document.getElementById("settings-export");
+const setDeleteEmailInput = document.getElementById("set-delete-email");
+const settingsDeleteMsg = document.getElementById("settings-delete-msg");
+const settingsDeleteBtn = document.getElementById("settings-delete");
+
+// The logged-in user's profile (from /api/auth/me), kept for the Settings screen.
+let currentUser = null;
 
 // The user's routines, loaded from the backend after login.
 let routines = [];
@@ -189,6 +210,7 @@ async function loadProfile() {
 // showView() so exactly one is ever visible.
 const ALL_VIEWS = [
   home, exercisesView, workoutView, routineView, historyView, historyDetailView,
+  settingsView,
 ];
 
 function showView(el) {
@@ -196,6 +218,7 @@ function showView(el) {
 }
 
 function showLoggedIn(user) {
+  currentUser = user;
   form.hidden = true;
   tabsEl.hidden = true;
   showView(home);
@@ -1446,6 +1469,145 @@ function renderWorkoutReadonly(container, content) {
     container.append(block);
   }
 }
+
+// --- Settings ------------------------------------------------------------
+settingsBtn.addEventListener("click", openSettings);
+settingsBackBtn.addEventListener("click", () => showView(home));
+
+function openSettings() {
+  showView(settingsView);
+  setNameInput.value = currentUser?.display_name || "";
+  setEmailInput.value = currentUser?.email || "";
+  setRestInput.value = currentUser?.preferences?.default_rest_seconds ?? 90;
+  setCurPwInput.value = "";
+  setNewPwInput.value = "";
+  setDeleteEmailInput.value = "";
+  settingsDeleteBtn.disabled = true;
+  settingsProfileMsg.textContent = "";
+  settingsPasswordMsg.textContent = "";
+  settingsDeleteMsg.textContent = "";
+}
+
+function setMsg(el, text, kind = "error") {
+  el.textContent = text;
+  el.dataset.kind = kind;
+}
+
+settingsProfileForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const saveBtn = document.getElementById("settings-profile-save");
+  saveBtn.disabled = true;
+  setMsg(settingsProfileMsg, "");
+
+  const rest = Math.max(0, Math.min(600, parseInt(setRestInput.value, 10) || 0));
+  const payload = {
+    display_name: setNameInput.value.trim(),
+    email: setEmailInput.value.trim(),
+    preferences: { default_rest_seconds: rest },
+  };
+  try {
+    const res = await authFetch(API + "/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setMsg(settingsProfileMsg, detailToText(data.detail) || "Could not save.");
+      return;
+    }
+    currentUser = data;
+    whoEl.textContent = currentUser.display_name;
+    setRestInput.value = currentUser.preferences?.default_rest_seconds ?? rest;
+    setMsg(settingsProfileMsg, "Saved.", "ok");
+  } catch (err) {
+    setMsg(settingsProfileMsg, err.message || "Could not reach the server.");
+  } finally {
+    saveBtn.disabled = false;
+  }
+});
+
+settingsPasswordForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const saveBtn = document.getElementById("settings-password-save");
+  saveBtn.disabled = true;
+  setMsg(settingsPasswordMsg, "");
+
+  if (setNewPwInput.value.length < 8) {
+    setMsg(settingsPasswordMsg, "New password must be at least 8 characters.");
+    saveBtn.disabled = false;
+    return;
+  }
+  try {
+    const res = await authFetch(API + "/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        current_password: setCurPwInput.value,
+        new_password: setNewPwInput.value,
+      }),
+    });
+    if (res.status === 204) {
+      setCurPwInput.value = "";
+      setNewPwInput.value = "";
+      setMsg(settingsPasswordMsg, "Password changed.", "ok");
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    setMsg(settingsPasswordMsg, detailToText(data.detail) || "Could not change password.");
+  } catch (err) {
+    setMsg(settingsPasswordMsg, err.message || "Could not reach the server.");
+  } finally {
+    saveBtn.disabled = false;
+  }
+});
+
+settingsExportBtn.addEventListener("click", async () => {
+  settingsExportBtn.disabled = true;
+  try {
+    const res = await authFetch(WORKOUTS_API + "/export.csv");
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "workout-history.csv";
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    /* ignore */
+  } finally {
+    settingsExportBtn.disabled = false;
+  }
+});
+
+setDeleteEmailInput.addEventListener("input", () => {
+  const match =
+    !!currentUser &&
+    setDeleteEmailInput.value.trim().toLowerCase() === currentUser.email;
+  settingsDeleteBtn.disabled = !match;
+});
+
+settingsDeleteBtn.addEventListener("click", async () => {
+  if (!confirm("Delete your account? This cannot be undone.")) return;
+  settingsDeleteBtn.disabled = true;
+  try {
+    const res = await authFetch(API + "/me", { method: "DELETE" });
+    if (res.status !== 204) {
+      setMsg(settingsDeleteMsg, "Could not delete the account.");
+      return;
+    }
+    store.clear();
+    currentUser = null;
+    showLoggedOut();
+  } catch (err) {
+    setMsg(settingsDeleteMsg, err.message || "Could not reach the server.");
+  } finally {
+    settingsDeleteBtn.disabled = false;
+  }
+});
 
 // --- On load: if we hold either token, try to use it --------------------
 if (store.access || store.refresh) {

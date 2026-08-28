@@ -6,13 +6,22 @@ up in main.py).
 import uuid
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import get_current_user
-from ..models import User
-from ..schemas import UserCreate, UserLogin, UserPublic, Token, RefreshRequest
+from ..models import Routine, User, Workout
+from ..schemas import (
+    PasswordChange,
+    RefreshRequest,
+    Token,
+    UserCreate,
+    UserLogin,
+    UserPublic,
+    UserUpdate,
+)
 from ..security import (
     hash_password,
     verify_password,
@@ -125,3 +134,88 @@ def me(current_user: User = Depends(get_current_user)):
     it, and this route only runs if a valid access token was provided.
     """
     return current_user
+
+
+@router.patch("/me", response_model=UserPublic)
+def update_me(
+    body: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Change display name, email, and/or preferences. Only the fields present in
+    the request body are touched."""
+    if body.display_name is not None:
+        current_user.display_name = body.display_name.strip()
+
+    if body.email is not None:
+        new_email = _normalize_email(body.email)
+        if new_email != current_user.email:
+            taken = (
+                db.query(User)
+                .filter(
+                    User.email == new_email,
+                    User.id != current_user.id,
+                    User.deleted_at.is_(None),
+                )
+                .first()
+            )
+            if taken is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="An account with that email already exists.",
+                )
+            current_user.email = new_email
+
+    if body.preferences is not None:
+        # Reassign a fresh dict so SQLAlchemy notices the JSONB change.
+        current_user.preferences = {
+            **(current_user.preferences or {}),
+            **body.preferences,
+        }
+
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(
+    body: PasswordChange,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Replace the password after checking the current one."""
+    if not verify_password(body.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect.",
+        )
+    current_user.password_hash = hash_password(body.new_password)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def delete_me(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Soft-delete the account. get_current_user filters deleted_at IS NULL, so
+    any access/refresh tokens already issued for this account stop working right
+    away -- no token blocklist needed. The email is tombstoned so it can be used
+    to register a fresh account later."""
+    now = func.now()
+    current_user.deleted_at = now
+    current_user.email = f"{current_user.email}.deleted.{current_user.id}"
+
+    db.query(Routine).filter(
+        Routine.user_id == current_user.id, Routine.deleted_at.is_(None)
+    ).update({Routine.deleted_at: now}, synchronize_session=False)
+    db.query(Workout).filter(
+        Workout.user_id == current_user.id,
+        Workout.status == "active",
+        Workout.deleted_at.is_(None),
+    ).update({Workout.deleted_at: now}, synchronize_session=False)
+
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

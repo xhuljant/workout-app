@@ -31,11 +31,25 @@ class UserPublic(BaseModel):
     id: uuid.UUID
     email: EmailStr
     display_name: str
+    preferences: dict = Field(default_factory=dict)
     created_at: datetime
 
     # from_attributes=True lets Pydantic build this straight from a SQLAlchemy
     # User object (reading user.id, user.email, ... by attribute).
     model_config = ConfigDict(from_attributes=True)
+
+
+class UserUpdate(BaseModel):
+    """Body for PATCH /api/auth/me. Every field optional -- only what's sent changes."""
+    display_name: str | None = Field(default=None, min_length=1, max_length=100)
+    email: EmailStr | None = None
+    preferences: dict | None = None
+
+
+class PasswordChange(BaseModel):
+    """Body for POST /api/auth/change-password."""
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class Token(BaseModel):

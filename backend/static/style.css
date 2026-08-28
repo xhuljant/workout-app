@@ -179,6 +179,18 @@ body {
 }
 .home-greeting { margin: 0; color: var(--muted); font-size: 15px; }
 .home-greeting strong { color: var(--text); }
+.home-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.home-actions .ghost { margin-top: 0; }
+
+/* Settings screen */
+.settings-section { margin-bottom: 20px; }
+.settings-section:last-child { margin-bottom: 0; }
+button.settings-section { width: 100%; }
+.settings-danger-note {
+  margin: 12px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
 
 /* Big tappable buttons: "Start empty workout", "New Routine", "Exercises",
    and one per routine. Same accent treatment as .submit, just rounder. */

@@ -7,6 +7,8 @@ There is at most one *active* workout per user (enforced by a partial unique
 index on the table), so the client can just ask for "my active workout" and get
 an unambiguous answer when it reloads.
 """
+import csv
+import io
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -179,6 +181,54 @@ def list_workouts(
         .all()
     )
     return [_summarize(w) for w in rows]
+
+
+@router.get("/export.csv")
+def export_history_csv(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Every logged set across the user's finished workouts, as a CSV download."""
+    routine_names = {
+        r.id: r.name
+        for r in db.query(Routine).filter(Routine.user_id == current_user.id).all()
+    }
+
+    workouts = (
+        db.query(Workout)
+        .filter(
+            Workout.user_id == current_user.id,
+            Workout.status == "finished",
+            Workout.deleted_at.is_(None),
+        )
+        .order_by(Workout.finished_at.asc().nullsfirst(), Workout.started_at.asc())
+        .all()
+    )
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["date", "routine", "exercise", "set", "weight_lb", "reps", "completed"])
+    for w in workouts:
+        when = (w.finished_at or w.started_at).date().isoformat()
+        routine = routine_names.get(w.routine_id, "")
+        for entry in (w.content or {}).get("exercises", []):
+            name = entry.get("name", "")
+            for i, s in enumerate(entry.get("sets", []), start=1):
+                writer.writerow([
+                    when,
+                    routine,
+                    name,
+                    i,
+                    s.get("weight") if s.get("weight") is not None else "",
+                    s.get("reps") if s.get("reps") is not None else "",
+                    "yes" if s.get("done") else "no",
+                ])
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="workout-history.csv"'},
+    )
 
 
 @router.get("/active", response_model=WorkoutPublic | None)
