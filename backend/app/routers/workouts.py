@@ -363,18 +363,12 @@ def previous_performance(
     return result
 
 
-@router.get("/{workout_id}", response_model=WorkoutPublic)
-def get_workout(
-    workout_id: uuid.UUID,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """One of the user's workouts in full -- the History detail view."""
+def _owned_workout(db: Session, user: User, workout_id: uuid.UUID) -> Workout:
     workout = (
         db.query(Workout)
         .filter(
             Workout.id == workout_id,
-            Workout.user_id == current_user.id,
+            Workout.user_id == user.id,
             Workout.deleted_at.is_(None),
         )
         .first()
@@ -384,3 +378,27 @@ def get_workout(
             status_code=status.HTTP_404_NOT_FOUND, detail="Workout not found."
         )
     return workout
+
+
+@router.get("/{workout_id}", response_model=WorkoutPublic)
+def get_workout(
+    workout_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """One of the user's workouts in full -- the History detail view."""
+    return _owned_workout(db, current_user, workout_id)
+
+
+@router.delete("/{workout_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_workout(
+    workout_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Soft-delete a workout -- removes it from History, the exercise stats, PR
+    baselines and the CSV export."""
+    workout = _owned_workout(db, current_user, workout_id)
+    workout.deleted_at = func.now()
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

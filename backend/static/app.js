@@ -115,6 +115,7 @@ const historyDetailBackBtn = document.getElementById("history-detail-back");
 const historyDetailTitleEl = document.getElementById("history-detail-title");
 const historyDetailMetaEl = document.getElementById("history-detail-meta");
 const historyDetailExercisesEl = document.getElementById("history-detail-exercises");
+const historyDetailDeleteBtn = document.getElementById("history-detail-delete");
 
 // Settings sub-view (+ its Change password / Delete account pages)
 const settingsView = document.getElementById("settings-view");
@@ -549,19 +550,183 @@ function renderExercises(items, query) {
       row.append(metaEl);
     }
 
-    if ((ex.instructions || []).length) {
-      const ol = document.createElement("ol");
-      ol.className = "exercise-steps";
-      for (const step of ex.instructions) {
-        const li = document.createElement("li");
-        li.textContent = step;
-        ol.append(li);
+    const body = document.createElement("div");
+    body.className = "exercise-detail-body";
+    row.append(body);
+
+    // Load this exercise's history the first time it's expanded.
+    let loaded = false;
+    row.addEventListener("toggle", () => {
+      if (row.open && !loaded) {
+        loaded = true;
+        loadExerciseDetail(ex, body);
       }
-      row.append(ol);
-    }
+    });
 
     exerciseListEl.append(row);
   }
+}
+
+const exerciseStatsCache = new Map();
+
+async function loadExerciseDetail(ex, body) {
+  body.textContent = "Loading…";
+  let stats = exerciseStatsCache.get(ex.id);
+  if (!stats) {
+    try {
+      const res = await authFetch(`${EXERCISES_API}/${ex.id}/stats`);
+      if (!res.ok) { body.textContent = "Could not load history."; return; }
+      stats = await res.json();
+      exerciseStatsCache.set(ex.id, stats);
+    } catch (err) {
+      body.textContent = err.message || "Could not reach the server.";
+      return;
+    }
+  }
+  renderExerciseDetail(ex, body, stats);
+}
+
+function statTile(label, value) {
+  const tile = document.createElement("div");
+  tile.className = "exercise-stat";
+  const l = document.createElement("span");
+  l.className = "exercise-stat-label";
+  l.textContent = label;
+  const v = document.createElement("span");
+  v.className = "exercise-stat-value";
+  v.textContent = value;
+  tile.append(l, v);
+  return tile;
+}
+
+function renderExerciseDetail(ex, body, stats) {
+  body.replaceChildren();
+
+  if (!stats.performed_count) {
+    const p = document.createElement("p");
+    p.className = "exercise-empty";
+    p.textContent = "No history for this exercise yet.";
+    body.append(p);
+    return;
+  }
+
+  const grid = document.createElement("div");
+  grid.className = "exercise-stats";
+  const lb = (n) => (n == null ? "—" : `${fmtVolume(n)}`);
+  grid.append(
+    statTile(
+      "Heaviest set",
+      stats.heaviest_weight == null
+        ? "—"
+        : `${stats.heaviest_weight} × ${stats.heaviest_weight_reps ?? "–"}`,
+    ),
+    statTile("Best est. 1RM", stats.best_1rm == null ? "—" : `~${lb(stats.best_1rm)}`),
+    statTile(
+      "Most reps",
+      stats.most_reps == null
+        ? "—"
+        : `${stats.most_reps} × ${stats.most_reps_weight ?? "–"}`,
+    ),
+    statTile("Best session vol.", lb(stats.best_session_volume)),
+    statTile("Total volume", lb(stats.total_volume)),
+    statTile("Sessions", String(stats.performed_count)),
+  );
+  body.append(grid);
+
+  if (stats.sessions.length >= 2) {
+    const chart = buildExerciseChart(stats.sessions);
+    if (chart) body.append(chart);
+  }
+
+  const list = document.createElement("div");
+  list.className = "exercise-sessions";
+  // newest first in the list
+  [...stats.sessions].reverse().forEach((s) => {
+    const rowEl = document.createElement("div");
+    rowEl.className = "exercise-session";
+
+    const main = document.createElement("span");
+    main.className = "exercise-session-main";
+    const top =
+      s.top_weight == null ? "—" : `${s.top_weight} × ${s.top_reps ?? "–"}`;
+    main.textContent = `${fmtDate(s.date)}  ·  ${top}  ·  ${fmtVolume(s.volume)}`;
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "exercise-session-del";
+    del.textContent = "✕";
+    del.setAttribute("aria-label", "Delete this workout");
+    del.addEventListener("click", async () => {
+      if (!confirm("Delete this workout? It's removed from history everywhere.")) return;
+      try {
+        const res = await authFetch(`${WORKOUTS_API}/${s.workout_id}`, { method: "DELETE" });
+        if (res.status !== 204 && res.status !== 404) return;
+        exerciseStatsCache.delete(ex.id);
+        loadExerciseDetail(ex, body);
+        loadHomeHistory();
+      } catch (err) {
+        /* ignore */
+      }
+    });
+
+    rowEl.append(main, del);
+    list.append(rowEl);
+  });
+  body.append(list);
+}
+
+// Inline-SVG line chart of heaviest-set weight across sessions (oldest -> newest).
+function buildExerciseChart(sessions) {
+  const pts = sessions
+    .map((s) => ({ date: s.date, y: s.top_weight }))
+    .filter((p) => p.y != null);
+  if (pts.length < 2) return null;
+
+  const W = 300, H = 120, padL = 34, padR = 8, padT = 10, padB = 18;
+  const ys = pts.map((p) => p.y);
+  let min = Math.min(...ys), max = Math.max(...ys);
+  if (min === max) { min -= 1; max += 1; }
+  const x = (i) => padL + (i / (pts.length - 1)) * (W - padL - padR);
+  const y = (v) => padT + (1 - (v - min) / (max - min)) * (H - padT - padB);
+
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("role", "img");
+
+  const line = document.createElementNS(NS, "polyline");
+  line.setAttribute("class", "exercise-chart-line");
+  line.setAttribute("points", pts.map((p, i) => `${x(i)},${y(p.y)}`).join(" "));
+  svg.append(line);
+
+  pts.forEach((p, i) => {
+    const c = document.createElementNS(NS, "circle");
+    c.setAttribute("class", "exercise-chart-dot");
+    c.setAttribute("cx", x(i));
+    c.setAttribute("cy", y(p.y));
+    c.setAttribute("r", "2.5");
+    svg.append(c);
+  });
+
+  const label = (tx, ty, text, anchor) => {
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("class", "exercise-chart-axis");
+    t.setAttribute("x", tx);
+    t.setAttribute("y", ty);
+    if (anchor) t.setAttribute("text-anchor", anchor);
+    t.textContent = text;
+    svg.append(t);
+  };
+  label(2, y(max) + 3, String(Math.round(max)));
+  label(2, y(min) + 3, String(Math.round(min)));
+  const d = (iso) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  label(padL, H - 4, d(pts[0].date), "start");
+  label(W - padR, H - 4, d(pts[pts.length - 1].date), "end");
+
+  const wrap = document.createElement("div");
+  wrap.className = "exercise-chart";
+  wrap.append(svg);
+  return wrap;
 }
 
 // Debounce the search box so we don't fire a request on every keystroke.
@@ -1807,7 +1972,10 @@ async function repeatWorkout(workoutId) {
   }
 }
 
+let historyDetailId = null;
+
 async function openHistoryDetail(id) {
+  historyDetailId = id;
   // Remember the origin (home "Recent workouts" row vs the full History list).
   historyDetailFrom = historyView.hidden ? home : historyView;
   showView(historyDetailView);
@@ -1827,6 +1995,24 @@ async function openHistoryDetail(id) {
     historyDetailMetaEl.textContent = err.message || "Could not reach the server.";
   }
 }
+
+historyDetailDeleteBtn.addEventListener("click", async () => {
+  if (!historyDetailId) return;
+  if (!confirm("Delete this workout? It's removed from history everywhere.")) return;
+  historyDetailDeleteBtn.disabled = true;
+  try {
+    const res = await authFetch(`${WORKOUTS_API}/${historyDetailId}`, { method: "DELETE" });
+    if (res.status !== 204 && res.status !== 404) return;
+    exerciseStatsCache.clear();   // any exercise's stats may have changed
+    showView(historyDetailFrom);
+    loadHistory();
+    loadHomeHistory();
+  } catch (err) {
+    /* stay put */
+  } finally {
+    historyDetailDeleteBtn.disabled = false;
+  }
+});
 
 // Read-only render of a workout's content -- used by History detail.
 function renderWorkoutReadonly(container, content) {

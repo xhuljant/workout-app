@@ -166,6 +166,30 @@ class ExercisePrevious(BaseModel):
     best_1rm: float | None = None
 
 
+class ExerciseSessionStat(BaseModel):
+    """One finished workout's numbers for a given exercise."""
+    workout_id: uuid.UUID
+    date: datetime
+    top_weight: float | None = None
+    top_reps: int | None = None
+    best_1rm: float | None = None
+    volume: float = 0.0
+
+
+class ExerciseStats(BaseModel):
+    """Everything the exercise detail screen shows for one exercise."""
+    performed_count: int = 0
+    last_performed: datetime | None = None
+    heaviest_weight: float | None = None
+    heaviest_weight_reps: int | None = None
+    most_reps: int | None = None
+    most_reps_weight: float | None = None
+    best_1rm: float | None = None
+    best_session_volume: float | None = None
+    total_volume: float = 0.0
+    sessions: list[ExerciseSessionStat] = Field(default_factory=list)
+
+
 # --- Routines ------------------------------------------------------------
 
 class RoutineSet(BaseModel):

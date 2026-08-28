@@ -37,8 +37,7 @@ body {
   display: grid;
   place-items: center;                 /* centre the card */
   padding: 24px;
-  background-color: var(--bg);
-  background-image: radial-gradient(1200px 600px at 50% -10%, #17171d 0%, var(--bg) 60%);
+  background: var(--bg);               /* solid -- no gradient */
   color: var(--text);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -522,6 +521,69 @@ button.settings-section { width: 100%; }
   color: var(--text);
 }
 .exercise-steps li { margin-bottom: 4px; }
+
+/* Exercise history: metric tiles, a progress chart, a per-session list */
+.exercise-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 10px;
+}
+.exercise-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.exercise-stat-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.exercise-stat-value { font-size: 14px; font-weight: 700; }
+
+.exercise-chart { margin-top: 12px; }
+.exercise-chart svg { width: 100%; height: auto; display: block; }
+.exercise-chart-line { fill: none; stroke: var(--accent); stroke-width: 2; }
+.exercise-chart-dot { fill: var(--accent); }
+.exercise-chart-axis { fill: var(--muted); font-size: 9px; }
+
+.exercise-sessions {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.exercise-session {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+}
+.exercise-session-main { flex: 1; }
+.exercise-session-del {
+  flex-shrink: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.exercise-session-del:hover { color: var(--error); }
+
+.exercise-empty {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
 
 /* "Add an exercise" disclosure */
 .add-exercise {
