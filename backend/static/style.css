@@ -183,13 +183,42 @@ body {
 .home-actions .ghost { margin-top: 0; }
 
 /* Settings screen */
-.settings-section { margin-bottom: 20px; }
+.settings-section { margin-bottom: 14px; }
 .settings-section:last-child { margin-bottom: 0; }
 button.settings-section { width: 100%; }
 .settings-danger-note {
-  margin: 12px 0;
+  margin: 12px 0 16px;
   font-size: 13px;
   color: var(--muted);
+}
+
+/* Filled utility buttons (Settings actions, the confirm-delete button) */
+.btn-dark,
+.btn-danger {
+  width: 100%;
+  padding: 14px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, opacity 120ms ease;
+}
+.btn-dark {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border);
+}
+.btn-dark:hover { border-color: var(--accent); }
+.btn-danger {
+  background: var(--error);
+  color: #10070a;
+}
+.btn-danger:hover { background: #ff8585; }
+.btn-danger:disabled {
+  opacity: 0.45;
+  cursor: default;
+  background: var(--error);
 }
 
 /* Big tappable buttons: "Start empty workout", "New Routine", "Exercises",

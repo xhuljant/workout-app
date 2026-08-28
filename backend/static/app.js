@@ -96,7 +96,7 @@ const historyDetailTitleEl = document.getElementById("history-detail-title");
 const historyDetailMetaEl = document.getElementById("history-detail-meta");
 const historyDetailExercisesEl = document.getElementById("history-detail-exercises");
 
-// Settings sub-view
+// Settings sub-view (+ its Change password / Delete account pages)
 const settingsView = document.getElementById("settings-view");
 const settingsBackBtn = document.getElementById("settings-back");
 const settingsProfileForm = document.getElementById("settings-profile-form");
@@ -104,11 +104,19 @@ const settingsProfileMsg = document.getElementById("settings-profile-msg");
 const setNameInput = document.getElementById("set-name");
 const setEmailInput = document.getElementById("set-email");
 const setRestInput = document.getElementById("set-rest");
+const settingsExportBtn = document.getElementById("settings-export");
+const settingsChangePwBtn = document.getElementById("settings-change-password-btn");
+const settingsDeleteAcctBtn = document.getElementById("settings-delete-account-btn");
+
+const passwordView = document.getElementById("password-view");
+const passwordBackBtn = document.getElementById("password-back");
 const settingsPasswordForm = document.getElementById("settings-password-form");
 const settingsPasswordMsg = document.getElementById("settings-password-msg");
 const setCurPwInput = document.getElementById("set-cur-pw");
 const setNewPwInput = document.getElementById("set-new-pw");
-const settingsExportBtn = document.getElementById("settings-export");
+
+const deleteView = document.getElementById("delete-view");
+const deleteBackBtn = document.getElementById("delete-back");
 const setDeleteEmailInput = document.getElementById("set-delete-email");
 const settingsDeleteMsg = document.getElementById("settings-delete-msg");
 const settingsDeleteBtn = document.getElementById("settings-delete");
@@ -210,7 +218,7 @@ async function loadProfile() {
 // showView() so exactly one is ever visible.
 const ALL_VIEWS = [
   home, exercisesView, workoutView, routineView, historyView, historyDetailView,
-  settingsView,
+  settingsView, passwordView, deleteView,
 ];
 
 function showView(el) {
@@ -1473,18 +1481,30 @@ function renderWorkoutReadonly(container, content) {
 // --- Settings ------------------------------------------------------------
 settingsBtn.addEventListener("click", openSettings);
 settingsBackBtn.addEventListener("click", () => showView(home));
+settingsChangePwBtn.addEventListener("click", openChangePassword);
+settingsDeleteAcctBtn.addEventListener("click", openDeleteAccount);
+passwordBackBtn.addEventListener("click", () => showView(settingsView));
+deleteBackBtn.addEventListener("click", () => showView(settingsView));
 
 function openSettings() {
   showView(settingsView);
   setNameInput.value = currentUser?.display_name || "";
   setEmailInput.value = currentUser?.email || "";
   setRestInput.value = currentUser?.preferences?.default_rest_seconds ?? 90;
+  settingsProfileMsg.textContent = "";
+}
+
+function openChangePassword() {
+  showView(passwordView);
   setCurPwInput.value = "";
   setNewPwInput.value = "";
+  settingsPasswordMsg.textContent = "";
+}
+
+function openDeleteAccount() {
+  showView(deleteView);
   setDeleteEmailInput.value = "";
   settingsDeleteBtn.disabled = true;
-  settingsProfileMsg.textContent = "";
-  settingsPasswordMsg.textContent = "";
   settingsDeleteMsg.textContent = "";
 }
 
@@ -1550,7 +1570,8 @@ settingsPasswordForm.addEventListener("submit", async (event) => {
     if (res.status === 204) {
       setCurPwInput.value = "";
       setNewPwInput.value = "";
-      setMsg(settingsPasswordMsg, "Password changed.", "ok");
+      showView(settingsView);
+      showToast("Password changed");
       return;
     }
     const data = await res.json().catch(() => ({}));

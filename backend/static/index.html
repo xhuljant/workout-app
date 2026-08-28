@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=13" />
+  <link rel="stylesheet" href="/style.css?v=14" />
 </head>
 <body>
   <main class="card">
@@ -228,44 +228,59 @@
         <button id="settings-profile-save" class="submit" type="submit">Save profile</button>
       </form>
 
-      <details class="add-exercise settings-section">
-        <summary>Change password</summary>
-        <form id="settings-password-form" novalidate>
-          <div class="field">
-            <label for="set-cur-pw">Current password</label>
-            <input id="set-cur-pw" type="password" autocomplete="current-password" />
-          </div>
-          <div class="field">
-            <label for="set-new-pw">New password</label>
-            <input id="set-new-pw" type="password" autocomplete="new-password" minlength="8" />
-          </div>
-          <p id="settings-password-msg" class="message" role="alert" aria-live="polite"></p>
-          <button id="settings-password-save" class="submit" type="submit">Change password</button>
-        </form>
-      </details>
-
-      <button id="settings-export" class="ghost settings-section" type="button">
+      <button id="settings-export" class="btn-dark settings-section" type="button">
         Export workout history (CSV)
       </button>
+      <button id="settings-change-password-btn" class="btn-dark settings-section" type="button">
+        Change password
+      </button>
+      <button id="settings-delete-account-btn" class="btn-danger settings-section" type="button">
+        Delete account
+      </button>
+    </section>
 
-      <details class="add-exercise settings-section">
-        <summary>Delete account</summary>
-        <p class="settings-danger-note">
-          This soft-deletes your account, routines, and active workout. Type your
-          email to confirm.
-        </p>
+    <!-- Change password: its own page, reached from Settings. -->
+    <section id="password-view" class="subview" hidden>
+      <div class="subview-head">
+        <button id="password-back" class="ghost" type="button" aria-label="Back to settings">&larr;</button>
+        <h2 class="subview-title">Change password</h2>
+      </div>
+      <form id="settings-password-form" novalidate>
         <div class="field">
-          <input id="set-delete-email" type="email" placeholder="you@example.com" autocomplete="off" />
+          <label for="set-cur-pw">Current password</label>
+          <input id="set-cur-pw" type="password" autocomplete="current-password" />
         </div>
-        <p id="settings-delete-msg" class="message" role="alert" aria-live="polite"></p>
-        <button id="settings-delete" class="ghost workout-discard" type="button" disabled>Delete account</button>
-      </details>
+        <div class="field">
+          <label for="set-new-pw">New password</label>
+          <input id="set-new-pw" type="password" autocomplete="new-password" minlength="8" />
+        </div>
+        <p id="settings-password-msg" class="message" role="alert" aria-live="polite"></p>
+        <button id="settings-password-save" class="submit" type="submit">Change password</button>
+      </form>
+    </section>
+
+    <!-- Delete account: its own page, reached from Settings. -->
+    <section id="delete-view" class="subview" hidden>
+      <div class="subview-head">
+        <button id="delete-back" class="ghost" type="button" aria-label="Back to settings">&larr;</button>
+        <h2 class="subview-title">Delete account</h2>
+      </div>
+      <p class="settings-danger-note">
+        This soft-deletes your account, routines, and active workout. Type your
+        email to confirm.
+      </p>
+      <div class="field">
+        <label for="set-delete-email">Email</label>
+        <input id="set-delete-email" type="email" placeholder="you@example.com" autocomplete="off" />
+      </div>
+      <p id="settings-delete-msg" class="message" role="alert" aria-live="polite"></p>
+      <button id="settings-delete" class="btn-danger" type="button" disabled>Delete account</button>
     </section>
   </main>
 
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=13"></script>
+  <script src="/app.js?v=14"></script>
 </body>
 </html>
