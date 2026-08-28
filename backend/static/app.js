@@ -73,12 +73,21 @@ const workoutFinishBtn = document.getElementById("workout-finish");
 const workoutDiscardBtn = document.getElementById("workout-discard");
 const toastEl = document.getElementById("toast");
 
+// Rest countdown bar
+const restTimerEl = document.getElementById("rest-timer");
+const restProgressEl = document.getElementById("rest-progress");
+const restTimeEl = document.getElementById("rest-time");
+const restMinusBtn = document.getElementById("rest-minus");
+const restPlusBtn = document.getElementById("rest-plus");
+const restSkipBtn = document.getElementById("rest-skip");
+
 // Routine editor sub-view
 const newRoutineBtn = document.getElementById("new-routine");
 const routineView = document.getElementById("routine-view");
 const routineTitleEl = document.getElementById("routine-title");
 const routineBackBtn = document.getElementById("routine-back");
 const routineNameInput = document.getElementById("routine-name");
+const routineRestInput = document.getElementById("routine-rest");
 const routineExercisesEl = document.getElementById("routine-exercises");
 const routineEmptyMsg = document.getElementById("routine-empty-msg");
 const routineAddExerciseBtn = document.getElementById("routine-add-exercise");
@@ -228,6 +237,7 @@ const ALL_VIEWS = [
 
 function showView(el) {
   for (const v of ALL_VIEWS) v.hidden = v !== el;
+  if (el !== workoutView) stopRestTimer();
 }
 
 function showLoggedIn(user) {
@@ -247,6 +257,7 @@ function showLoggedOut() {
   tabsEl.hidden = false;
   for (const v of ALL_VIEWS) v.hidden = true;
   stopDurationTimer();
+  stopRestTimer();
   activeWorkout = null;
   refreshStartButton();
 }
@@ -784,6 +795,13 @@ function buildExerciseBlock(entry, exIndex) {
   });
   block.append(notes);
 
+  const restLabel = document.createElement("button");
+  restLabel.type = "button";
+  restLabel.className = "exercise-rest";
+  restLabel.textContent = `⏱ Rest Timer: ${fmtRest(workoutRestSeconds())}`;
+  restLabel.addEventListener("click", () => startRestTimer());
+  block.append(restLabel);
+
   const prev = previousByExercise[entry.exercise_id];
 
   const grid = document.createElement("div");
@@ -843,6 +861,7 @@ function buildExerciseBlock(entry, exIndex) {
       set.done = done.checked;
       if (set.done) {
         checkForPr(entry, set, num);
+        startRestTimer();
       } else {
         set.pr_weight = false;
         set.pr_1rm = false;
@@ -971,6 +990,67 @@ function formatDuration(ms) {
   return (h ? `${h}:` : "") + `${mm}:${String(s).padStart(2, "0")}`;
 }
 
+// --- Rest timer ------------------------------------------------------
+let restEndsAt = 0;
+let restTotalMs = 0;
+let restInterval = null;
+
+function workoutRestSeconds() {
+  return (
+    (activeWorkout && activeWorkout.rest_seconds) ||
+    (currentUser && currentUser.preferences && currentUser.preferences.default_rest_seconds) ||
+    90
+  );
+}
+
+function fmtRest(s) {
+  s = Math.max(0, Math.round(s));
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  if (!m) return `${sec}s`;
+  return sec ? `${m}min ${sec}s` : `${m}min`;
+}
+
+function startRestTimer() {
+  restTotalMs = workoutRestSeconds() * 1000;
+  restEndsAt = Date.now() + restTotalMs;
+  restTimerEl.hidden = false;
+  workoutView.classList.add("has-rest-timer");
+  if (restInterval) clearInterval(restInterval);
+  tickRest();
+  restInterval = setInterval(tickRest, 250);
+}
+
+function tickRest() {
+  const rem = restEndsAt - Date.now();
+  if (rem <= 0) {
+    stopRestTimer();
+    if (navigator.vibrate) navigator.vibrate(200);
+    return;
+  }
+  restTimeEl.textContent = formatDuration(rem);
+  restProgressEl.style.width = Math.max(0, Math.min(1, rem / restTotalMs)) * 100 + "%";
+}
+
+function stopRestTimer() {
+  if (restInterval) clearInterval(restInterval);
+  restInterval = null;
+  restTimerEl.hidden = true;
+  workoutView.classList.remove("has-rest-timer");
+}
+
+restMinusBtn.addEventListener("click", () => {
+  restEndsAt = Math.max(Date.now() + 1000, restEndsAt - 15000);
+  restTotalMs = Math.max(15000, restTotalMs - 15000);
+  tickRest();
+});
+restPlusBtn.addEventListener("click", () => {
+  restEndsAt += 15000;
+  restTotalMs += 15000;
+  tickRest();
+});
+restSkipBtn.addEventListener("click", stopRestTimer);
+
 // --- Saving ----------------------------------------------------------
 function scheduleSave() {
   clearTimeout(workoutSaveTimer);
@@ -1062,7 +1142,12 @@ async function maybeSyncRoutineFromWorkout() {
     await authFetch(`${ROUTINES_API}/${routineId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: routine.name, content }),
+      body: JSON.stringify({
+        name: routine.name,
+        content,
+        folder_id: routine.folder_id,
+        rest_seconds: routine.rest_seconds ?? null,
+      }),
     });
     await loadRoutines();
   } catch (err) {
@@ -1257,9 +1342,10 @@ newRoutineBtn.addEventListener("click", () => openRoutineEditor(null));
 
 function openRoutineEditor(routine) {
   const folderId = routine ? routine.folder_id : defaultFolderId();
+  const rest = routine ? (routine.rest_seconds ?? null) : null;
   editingRoutine = routine
-    ? { id: routine.id, name: routine.name, folder_id: folderId, content: deepCopy(routine.content) }
-    : { name: "", folder_id: folderId, content: { exercises: [] } };
+    ? { id: routine.id, name: routine.name, folder_id: folderId, rest_seconds: rest, content: deepCopy(routine.content) }
+    : { name: "", folder_id: folderId, rest_seconds: null, content: { exercises: [] } };
   if (!editingRoutine.content || !Array.isArray(editingRoutine.content.exercises)) {
     editingRoutine.content = { exercises: [] };
   }
@@ -1267,6 +1353,7 @@ function openRoutineEditor(routine) {
 
   routineTitleEl.textContent = routine ? "Edit Routine" : "New Routine";
   routineNameInput.value = editingRoutine.name;
+  routineRestInput.value = editingRoutine.rest_seconds ?? "";
   routineDeleteBtn.hidden = !routine;
 
   routineFolderSelect.replaceChildren();
@@ -1297,6 +1384,16 @@ routineNameInput.addEventListener("input", () => {
 
 routineFolderSelect.addEventListener("change", () => {
   if (editingRoutine) editingRoutine.folder_id = routineFolderSelect.value;
+});
+
+routineRestInput.addEventListener("input", () => {
+  if (!editingRoutine) return;
+  const v = routineRestInput.value.trim();
+  if (v === "") {
+    editingRoutine.rest_seconds = null;
+  } else {
+    editingRoutine.rest_seconds = Math.max(0, Math.min(3600, parseInt(v, 10) || 0));
+  }
 });
 
 function renderRoutineEditor() {
@@ -1422,6 +1519,7 @@ routineSaveBtn.addEventListener("click", async () => {
     name,
     content: editingRoutine.content,
     folder_id: editingRoutine.folder_id || null,
+    rest_seconds: editingRoutine.rest_seconds ?? null,
   };
   const editing = Boolean(editingRoutine.id);
   try {

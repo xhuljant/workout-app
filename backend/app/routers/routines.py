@@ -97,6 +97,7 @@ def create_routine(
         folder_id=folder_id,
         name=body.name.strip(),
         position=(highest + 1) if highest is not None else 0,
+        rest_seconds=body.rest_seconds,
         content=body.content.model_dump(mode="json"),
     )
     db.add(routine)
@@ -149,6 +150,7 @@ def update_routine(
         routine.position = (highest + 1) if highest is not None else 0
         routine.folder_id = new_folder_id
     routine.name = body.name.strip()
+    routine.rest_seconds = body.rest_seconds
     routine.content = body.content.model_dump(mode="json")
     db.commit()
     db.refresh(routine)

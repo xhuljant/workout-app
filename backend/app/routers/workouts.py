@@ -117,6 +117,7 @@ def start_workout(
     routine_id = body.routine_id if body else None
     from_workout_id = body.from_workout_id if body else None
     content = {"exercises": []}
+    rest_seconds = None   # concrete value resolved below
 
     if from_workout_id is not None:
         src = (
@@ -133,6 +134,7 @@ def start_workout(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Workout not found."
             )
         content = _content_from_workout(src)
+        rest_seconds = src.rest_seconds
         if routine_id is None:
             routine_id = src.routine_id   # carry the routine link so Finish can still sync it
     elif routine_id is not None:
@@ -150,9 +152,16 @@ def start_workout(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Routine not found."
             )
         content = _content_from_routine(routine)
+        rest_seconds = routine.rest_seconds
+
+    if not rest_seconds:
+        rest_seconds = (current_user.preferences or {}).get("default_rest_seconds") or 90
 
     workout = Workout(
-        user_id=current_user.id, routine_id=routine_id, content=content
+        user_id=current_user.id,
+        routine_id=routine_id,
+        rest_seconds=rest_seconds,
+        content=content,
     )
     db.add(workout)
     db.commit()

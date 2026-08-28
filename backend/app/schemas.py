@@ -138,6 +138,7 @@ class WorkoutPublic(BaseModel):
     id: uuid.UUID
     status: str
     routine_id: uuid.UUID | None
+    rest_seconds: int | None
     content: WorkoutContent
     started_at: datetime
     finished_at: datetime | None
@@ -187,6 +188,7 @@ class RoutineCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     content: RoutineContent
     folder_id: uuid.UUID | None = None
+    rest_seconds: int | None = Field(default=None, ge=0, le=3600)
 
 
 # PUT uses the same shape as create.
@@ -205,6 +207,7 @@ class RoutinePublic(BaseModel):
     name: str
     position: int
     folder_id: uuid.UUID | None
+    rest_seconds: int | None
     content: RoutineContent
     created_at: datetime
 

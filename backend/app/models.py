@@ -167,6 +167,10 @@ class Workout(Base):
         String, index=True, nullable=False, default="active"
     )
 
+    # Rest-timer length for this session, in seconds (seeded at start from the
+    # routine or the user's default).
+    rest_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # {"exercises": [{"exercise_id", "name", "notes", "sets": [{"weight","reps","done"}]}]}
     content: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=lambda: {"exercises": []}
@@ -231,6 +235,10 @@ class Routine(Base):
 
     # Ordering within the folder. Lower shows first.
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # Rest-timer length for workouts started from this routine, in seconds.
+    # NULL = fall back to the user's default (preferences.default_rest_seconds).
+    rest_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # {"exercises": [{"exercise_id", "name", "sets": [{"weight", "reps"}]}]}
     # -- a template, so no per-set "done" and no notes.

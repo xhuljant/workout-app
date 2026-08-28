@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=15" />
+  <link rel="stylesheet" href="/style.css?v=16" />
 </head>
 <body>
   <main class="card">
@@ -182,6 +182,10 @@
         <label for="routine-folder">Folder</label>
         <select id="routine-folder"></select>
       </div>
+      <div class="field">
+        <label for="routine-rest">Rest timer <span class="opt">seconds, blank = use default</span></label>
+        <input id="routine-rest" type="number" inputmode="numeric" min="0" max="3600" step="5" />
+      </div>
 
       <div id="routine-exercises" class="workout-exercises"></div>
       <p id="routine-empty-msg" class="routine-empty" hidden>
@@ -290,9 +294,18 @@
     </section>
   </main>
 
+  <!-- Rest countdown, shown while resting between sets. -->
+  <div id="rest-timer" class="rest-timer" hidden>
+    <div id="rest-progress" class="rest-progress"></div>
+    <button id="rest-minus" class="rest-adjust" type="button">&minus;15</button>
+    <span id="rest-time" class="rest-time">0:00</span>
+    <button id="rest-plus" class="rest-adjust" type="button">+15</button>
+    <button id="rest-skip" class="rest-skip" type="button">Skip</button>
+  </div>
+
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=15"></script>
+  <script src="/app.js?v=16"></script>
 </body>
 </html>
