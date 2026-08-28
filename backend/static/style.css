@@ -52,20 +52,28 @@ body {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
 }
 
-/* On phones the card becomes the whole screen -- no window chrome. */
-@media (max-width: 640px) {
-  body { padding: 0; }
+/* On phones / tablets the app fills the whole screen -- no floating window. */
+@media (max-width: 768px) {
+  body {
+    display: block;
+    padding: 0;
+    min-height: 100dvh;
+  }
   .card {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
     max-width: none;
     min-height: 100dvh;
     border: 0;
     border-radius: 0;
     box-shadow: none;
+    background: transparent;
     padding:
-      calc(20px + env(safe-area-inset-top))
-      calc(18px + env(safe-area-inset-right))
-      calc(20px + env(safe-area-inset-bottom))
-      calc(18px + env(safe-area-inset-left));
+      calc(18px + env(safe-area-inset-top))
+      calc(16px + env(safe-area-inset-right))
+      calc(18px + env(safe-area-inset-bottom))
+      calc(16px + env(safe-area-inset-left));
   }
 }
 
