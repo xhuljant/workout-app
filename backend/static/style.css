@@ -101,6 +101,38 @@ body {
 .brand-mark { color: var(--accent); font-size: 22px; line-height: 1; }
 .brand-name { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: 0.02em; }
 
+/* Hamburger button in the wordmark header -- opens the right-side menu.
+   Only shown on the home screen (app.js toggles `hidden`). */
+.brand-menu {
+  margin-left: auto;                 /* push to the far right of the header */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+}
+.brand-menu:hover { background: var(--surface-2); }
+/* three stacked bars, drawn with the span and its two pseudo-elements */
+.brand-menu-bars { position: relative; }
+.brand-menu-bars,
+.brand-menu-bars::before,
+.brand-menu-bars::after {
+  content: "";
+  display: block;
+  width: 20px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+}
+.brand-menu-bars::before { position: absolute; top: -6px; }
+.brand-menu-bars::after  { position: absolute; top: 6px; }
+
 /* Tabs (Log in / Create account) */
 .tabs {
   display: grid;
@@ -999,6 +1031,50 @@ button.settings-section { width: 100%; }
 .rest-editor-step:hover:not(:disabled) { border-color: var(--accent); }
 .rest-editor-step:disabled { opacity: 0.4; cursor: default; }
 .rest-editor-box .ghost { margin-top: 0; }
+
+/* Right-side menu panel, opened from the home screen's ☰ button.
+   Same dim-layer pattern as .rest-editor, but anchored to the right edge. */
+.side-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.6);      /* dims the screen behind it */
+}
+.side-menu-panel {
+  width: 78%;
+  max-width: 320px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;      /* Settings pins top, Log out pins bottom */
+  gap: 12px;
+  padding:
+    calc(20px + env(safe-area-inset-top))
+    calc(18px + env(safe-area-inset-right))
+    calc(20px + env(safe-area-inset-bottom))
+    18px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.5);
+}
+.side-menu-item {
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+.side-menu-item:hover { border-color: var(--accent); }
+.side-menu-item--danger { color: var(--error); }
+.side-menu-item--danger:hover { border-color: var(--error); }
 
 /* Keep the workout's Finish button scrollable clear of the rest bar */
 #workout-view.has-rest-timer { padding-bottom: 96px; }

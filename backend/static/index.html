@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=26" />
+  <link rel="stylesheet" href="/style.css?v=27" />
 </head>
 <body>
   <main class="card">
@@ -18,6 +18,10 @@
     <header class="brand">
       <span class="brand-mark" aria-hidden="true">&#9626;</span>
       <h1 class="brand-name">Workout Log</h1>
+      <button id="menu-btn" class="brand-menu" type="button"
+              aria-label="Menu" aria-haspopup="true" aria-expanded="false" hidden>
+        <span class="brand-menu-bars" aria-hidden="true"></span>
+      </button>
     </header>
 
     <!-- Switch between logging in and creating an account -->
@@ -53,10 +57,6 @@
     <section id="home" class="home" hidden>
       <div class="home-head">
         <p class="home-greeting">Hi, <strong id="who"></strong></p>
-        <div class="home-actions">
-          <button id="settings-btn" class="ghost" type="button">Settings</button>
-          <button id="logout" class="ghost" type="button">Log out</button>
-        </div>
       </div>
 
       <button id="start-empty" class="action action--wide" type="button">
@@ -339,9 +339,17 @@
     </div>
   </div>
 
+  <!-- Right-side menu, opened by the home screen's ☰ button. -->
+  <div id="side-menu" class="side-menu" hidden>
+    <nav class="side-menu-panel" aria-label="Menu">
+      <button id="menu-settings" class="side-menu-item" type="button">Settings</button>
+      <button id="menu-logout" class="side-menu-item side-menu-item--danger" type="button">Log out</button>
+    </nav>
+  </div>
+
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=26"></script>
+  <script src="/app.js?v=27"></script>
 </body>
 </html>

@@ -36,8 +36,10 @@ const submitBtn = document.getElementById("submit");
 const messageEl = document.getElementById("message");
 const home = document.getElementById("home");
 const whoEl = document.getElementById("who");
-const settingsBtn = document.getElementById("settings-btn");
-const logoutBtn = document.getElementById("logout");
+const menuBtn = document.getElementById("menu-btn");
+const sideMenu = document.getElementById("side-menu");
+const menuSettingsBtn = document.getElementById("menu-settings");
+const logoutBtn = document.getElementById("menu-logout");
 const passwordInput = document.getElementById("password");
 const routineList = document.getElementById("routine-list");
 const routineEmpty = document.getElementById("routine-empty");
@@ -250,6 +252,8 @@ const ALL_VIEWS = [
 
 function showView(el) {
   for (const v of ALL_VIEWS) v.hidden = v !== el;
+  // The ☰ menu button lives in the shared header but only makes sense on home.
+  menuBtn.hidden = el !== home;
   // Leaving the workout screen only detaches the bar -- the countdown keeps
   // running and re-appears when you come back.
   if (el !== workoutView) hideRestTimer();
@@ -271,6 +275,8 @@ function showLoggedOut() {
   form.hidden = false;
   tabsEl.hidden = false;
   for (const v of ALL_VIEWS) v.hidden = true;
+  menuBtn.hidden = true;
+  closeSideMenu();
   stopDurationTimer();
   endRestTimer();
   activeWorkout = null;
@@ -396,6 +402,7 @@ function renderFolders() {
 }
 
 logoutBtn.addEventListener("click", () => {
+  closeSideMenu();
   store.clear();
   showLoggedOut();
   showMessage("");
@@ -2347,8 +2354,25 @@ function renderWorkoutReadonly(container, content) {
   }
 }
 
+// --- Side menu ---------------------------------------------------------------
+function openSideMenu() {
+  sideMenu.hidden = false;
+  menuBtn.setAttribute("aria-expanded", "true");
+}
+function closeSideMenu() {
+  sideMenu.hidden = true;
+  menuBtn.setAttribute("aria-expanded", "false");
+}
+menuBtn.addEventListener("click", openSideMenu);
+sideMenu.addEventListener("click", (e) => {          // tap the dimmed area to close
+  if (e.target === sideMenu) closeSideMenu();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !sideMenu.hidden) closeSideMenu();
+});
+menuSettingsBtn.addEventListener("click", () => { closeSideMenu(); openSettings(); });
+
 // --- Settings ------------------------------------------------------------
-settingsBtn.addEventListener("click", openSettings);
 settingsBackBtn.addEventListener("click", () => showView(home));
 settingsChangePwBtn.addEventListener("click", openChangePassword);
 settingsDeleteAcctBtn.addEventListener("click", openDeleteAccount);
