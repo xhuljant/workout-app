@@ -38,6 +38,7 @@ const home = document.getElementById("home");
 const whoEl = document.getElementById("who");
 const menuBtn = document.getElementById("menu-btn");
 const sideMenu = document.getElementById("side-menu");
+const menuCloseBtn = document.getElementById("menu-close");
 const menuSettingsBtn = document.getElementById("menu-settings");
 const logoutBtn = document.getElementById("menu-logout");
 const passwordInput = document.getElementById("password");
@@ -122,6 +123,17 @@ const historyDetailTitleEl = document.getElementById("history-detail-title");
 const historyDetailMetaEl = document.getElementById("history-detail-meta");
 const historyDetailExercisesEl = document.getElementById("history-detail-exercises");
 const historyDetailDeleteBtn = document.getElementById("history-detail-delete");
+
+// Calendar sub-view (opened from the ☰ menu)
+const menuCalendarBtn = document.getElementById("menu-calendar");
+const calendarView = document.getElementById("calendar-view");
+const calendarBackBtn = document.getElementById("calendar-back");
+const calendarStatusEl = document.getElementById("calendar-status");
+const calendarScrollEl = document.getElementById("calendar-scroll");
+const dayPickerEl = document.getElementById("day-picker");
+const dayPickerTitleEl = document.getElementById("day-picker-title");
+const dayPickerListEl = document.getElementById("day-picker-list");
+const dayPickerCancelBtn = document.getElementById("day-picker-cancel");
 
 // Settings sub-view (+ its Change password / Delete account pages)
 const settingsView = document.getElementById("settings-view");
@@ -247,7 +259,8 @@ async function loadProfile() {
 // showView() so exactly one is ever visible.
 const ALL_VIEWS = [
   home, exercisesView, exerciseCreateView, workoutView, routineView,
-  historyView, historyDetailView, settingsView, passwordView, deleteView,
+  historyView, historyDetailView, calendarView, settingsView, passwordView,
+  deleteView,
 ];
 
 function showView(el) {
@@ -2253,8 +2266,9 @@ let historyDetailId = null;
 
 async function openHistoryDetail(id) {
   historyDetailId = id;
-  // Remember the origin (home "Recent workouts" row vs the full History list).
-  historyDetailFrom = historyView.hidden ? home : historyView;
+  // Remember the origin (Calendar, the full History list, or the home preview).
+  historyDetailFrom = !calendarView.hidden ? calendarView
+    : historyView.hidden ? home : historyView;
   showView(historyDetailView);
   historyDetailMetaEl.textContent = "Loading…";
   historyDetailExercisesEl.replaceChildren();
@@ -2284,11 +2298,184 @@ historyDetailDeleteBtn.addEventListener("click", async () => {
     showView(historyDetailFrom);
     loadHistory();
     loadHomeHistory();
+    if (historyDetailFrom === calendarView) loadCalendar();
   } catch (err) {
     /* stay put */
   } finally {
     historyDetailDeleteBtn.disabled = false;
   }
+});
+
+// --- Calendar -------------------------------------------------------------
+// A continuous vertical run of month grids, from the first workout's month
+// through next month, auto-centred on the current month. Days with a finished
+// workout are highlighted and carry a chip per workout that opens its summary.
+const CAL_MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+const CAL_WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
+
+// Local Y-M-D key, so workouts bucket by the day the user sees (not UTC).
+const calDayKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+
+menuCalendarBtn.addEventListener("click", () => { closeSideMenu(); openCalendar(); });
+calendarBackBtn.addEventListener("click", () => showView(home));
+
+async function openCalendar() {
+  showView(calendarView);
+  await loadCalendar();
+}
+
+async function loadCalendar() {
+  calendarStatusEl.textContent = "Loading…";
+  calendarScrollEl.replaceChildren();
+  try {
+    const res = await authFetch(WORKOUTS_API + "/calendar");
+    if (!res.ok) {
+      calendarStatusEl.textContent = "Could not load your calendar.";
+      return;
+    }
+    renderCalendar(await res.json());   // [{id, at, name}] ascending by date
+  } catch (err) {
+    calendarStatusEl.textContent = err.message || "Could not reach the server.";
+  }
+}
+
+function renderCalendar(items) {
+  calendarStatusEl.textContent = items.length ? "" : "No workouts logged yet.";
+
+  // Bucket workouts by local day.
+  const byDay = new Map();
+  for (const w of items) {
+    const key = calDayKey(new Date(w.at));
+    if (!byDay.has(key)) byDay.set(key, []);
+    byDay.get(key).push({ id: w.id, name: w.name || "Workout", at: w.at });
+  }
+
+  const now = new Date();
+  const firstAt = items.length ? new Date(items[0].at) : now;
+  let y = firstAt.getFullYear();
+  let m = firstAt.getMonth();
+  const endY = now.getFullYear();
+  const endM = now.getMonth() + 1;          // one trailing month for headroom
+  const todayKey = calDayKey(now);
+  let currentMonthEl = null;
+
+  while (y < endY || (y === endY && m <= endM)) {
+    const monthEl = buildCalendarMonth(y, m, byDay, todayKey);
+    if (y === now.getFullYear() && m === now.getMonth()) currentMonthEl = monthEl;
+    calendarScrollEl.append(monthEl);
+    m++;
+    if (m > 11) { m = 0; y++; }
+  }
+
+  if (currentMonthEl) {
+    requestAnimationFrame(() => currentMonthEl.scrollIntoView({ block: "center" }));
+  }
+}
+
+function buildCalendarMonth(year, month, byDay, todayKey) {
+  const wrap = document.createElement("div");
+  wrap.className = "calendar-month";
+
+  const label = document.createElement("div");
+  label.className = "calendar-month-label";
+  label.textContent = `${CAL_MONTHS[month]} ${year}`;
+  wrap.append(label);
+
+  const head = document.createElement("div");
+  head.className = "calendar-weekdays";
+  for (const d of CAL_WEEKDAYS) {
+    const c = document.createElement("span");
+    c.className = "calendar-weekday";
+    c.textContent = d;
+    head.append(c);
+  }
+  wrap.append(head);
+
+  const grid = document.createElement("div");
+  grid.className = "calendar-grid";
+
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  for (let i = 0; i < firstDow; i++) {
+    const blank = document.createElement("div");
+    blank.className = "calendar-day calendar-day--empty";
+    grid.append(blank);
+  }
+  for (let day = 1; day <= daysInMonth; day++) {
+    const key = `${year}-${month}-${day}`;
+    const workouts = byDay.get(key);
+
+    // A day with workouts is itself the button; a plain day is a static div.
+    const cell = document.createElement(workouts ? "button" : "div");
+    cell.className = "calendar-day";
+    if (workouts) cell.type = "button";
+    if (key === todayKey) cell.classList.add("calendar-day--today");
+
+    const num = document.createElement("div");
+    num.className = "calendar-day-num";
+    num.textContent = day;
+    cell.append(num);
+
+    if (workouts) {
+      cell.classList.add("calendar-day--has-workout");
+
+      const label = document.createElement("div");
+      label.className = "calendar-day-label";
+      label.textContent = workouts.length === 1
+        ? workouts[0].name
+        : `${workouts[0].name} +${workouts.length - 1}`;
+      cell.title = workouts.map((w) => w.name).join(", ");
+      cell.append(label);
+
+      // One workout jumps straight to it; several open a chooser.
+      cell.addEventListener("click", () => {
+        if (workouts.length === 1) openHistoryDetail(workouts[0].id);
+        else openDayPicker(workouts);
+      });
+    }
+    grid.append(cell);
+  }
+  wrap.append(grid);
+  return wrap;
+}
+
+// Chooser shown when a tapped calendar day holds more than one workout.
+function openDayPicker(workouts) {
+  dayPickerTitleEl.textContent = new Date(workouts[0].at).toLocaleDateString(
+    undefined, { weekday: "long", month: "long", day: "numeric" },
+  );
+  dayPickerListEl.replaceChildren();
+  for (const w of workouts) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "day-picker-item";
+    const name = document.createElement("span");
+    name.textContent = w.name;
+    const time = document.createElement("span");
+    time.className = "day-picker-time";
+    time.textContent = "  ·  " + new Date(w.at).toLocaleTimeString(
+      undefined, { hour: "numeric", minute: "2-digit" },
+    );
+    item.append(name, time);
+    item.addEventListener("click", () => { closeDayPicker(); openHistoryDetail(w.id); });
+    dayPickerListEl.append(item);
+  }
+  dayPickerEl.hidden = false;
+}
+
+function closeDayPicker() {
+  dayPickerEl.hidden = true;
+}
+
+dayPickerCancelBtn.addEventListener("click", closeDayPicker);
+dayPickerEl.addEventListener("click", (e) => {   // tap the dimmed area to close
+  if (e.target === dayPickerEl) closeDayPicker();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !dayPickerEl.hidden) closeDayPicker();
 });
 
 // Read-only render of a workout's content -- used by History detail.
@@ -2364,6 +2551,7 @@ function closeSideMenu() {
   menuBtn.setAttribute("aria-expanded", "false");
 }
 menuBtn.addEventListener("click", openSideMenu);
+menuCloseBtn.addEventListener("click", closeSideMenu);   // "Back" at the top of the panel
 sideMenu.addEventListener("click", (e) => {          // tap the dimmed area to close
   if (e.target === sideMenu) closeSideMenu();
 });

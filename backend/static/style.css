@@ -1075,6 +1075,138 @@ button.settings-section { width: 100%; }
 .side-menu-item:hover { border-color: var(--accent); }
 .side-menu-item--danger { color: var(--error); }
 .side-menu-item--danger:hover { border-color: var(--error); }
+/* Groups the top items so space-between still pins them up and Log out down. */
+.side-menu-group { display: flex; flex-direction: column; gap: 12px; }
+/* "Back" at the top of the panel -- just closes it, returning to the screen behind. */
+.side-menu-close {
+  align-self: flex-start;
+  margin-bottom: 4px;
+  padding: 8px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+.side-menu-close:hover { color: var(--text); background: var(--surface-2); }
+
+/* Calendar view -- a continuous vertical run of month grids */
+.calendar-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 70vh;                    /* bounds it on desktop, where .subview isn't flex */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.calendar-month { display: flex; flex-direction: column; gap: 6px; }
+.calendar-month-label {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 0;
+  background: var(--surface);
+  font-size: 14px;
+  font-weight: 700;
+}
+.calendar-weekdays,
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+.calendar-weekday {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+/* Fixed height -- a day with several workouts must not grow taller than the rest. */
+.calendar-day {
+  height: 58px;
+  padding: 3px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font: inherit;
+  text-align: left;
+}
+button.calendar-day { margin: 0; appearance: none; cursor: pointer; }
+.calendar-day--empty { visibility: hidden; }
+.calendar-day--has-workout {
+  border-color: var(--accent);
+  background: rgba(47, 129, 247, 0.14);
+}
+.calendar-day-num { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+.calendar-day--today .calendar-day-num { color: var(--accent); font-weight: 800; }
+/* One line: the workout name (or "Name +N" when the day has several). */
+.calendar-day-label {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* "Which workout?" chooser for calendar days with more than one workout */
+.day-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 1350;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.6);
+}
+.day-picker-box {
+  width: 100%;
+  max-width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.day-picker-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-align: center;
+}
+.day-picker-list { display: flex; flex-direction: column; gap: 8px; }
+.day-picker-item {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+.day-picker-item:hover { border-color: var(--accent); }
+.day-picker-time { color: var(--muted); font-weight: 500; font-size: 12px; }
+.day-picker-box .ghost { margin-top: 0; }
 
 /* Keep the workout's Finish button scrollable clear of the rest bar */
 #workout-view.has-rest-timer { padding-bottom: 96px; }

@@ -176,6 +176,13 @@ class WorkoutSummary(BaseModel):
     volume: float           # sum of weight * reps over completed sets
 
 
+class WorkoutCalendarEntry(BaseModel):
+    """One finished workout as a mark on the Calendar view."""
+    id: uuid.UUID
+    at: datetime            # finished_at, or started_at if never finished
+    name: str               # routine name; "" for ad-hoc (routine-less) workouts
+
+
 class ExercisePrevious(BaseModel):
     """Last-time performance + all-time bests for one exercise."""
     last_sets: list[WorkoutSet] = Field(default_factory=list)

@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=27" />
+  <link rel="stylesheet" href="/style.css?v=29" />
 </head>
 <body>
   <main class="card">
@@ -233,6 +233,16 @@
       <div id="history-list" class="routine-list"></div>
     </section>
 
+    <!-- Calendar: months of training days, opened from the ☰ menu. -->
+    <section id="calendar-view" class="subview" hidden>
+      <div class="subview-head">
+        <button id="calendar-back" class="ghost" type="button" aria-label="Back to home">&larr;</button>
+        <h2 class="subview-title">Calendar</h2>
+      </div>
+      <p id="calendar-status" class="exercise-status" aria-live="polite"></p>
+      <div id="calendar-scroll" class="calendar-scroll"></div>
+    </section>
+
     <!-- One past workout, read-only. -->
     <section id="history-detail-view" class="subview" hidden>
       <div class="subview-head">
@@ -342,14 +352,27 @@
   <!-- Right-side menu, opened by the home screen's ☰ button. -->
   <div id="side-menu" class="side-menu" hidden>
     <nav class="side-menu-panel" aria-label="Menu">
-      <button id="menu-settings" class="side-menu-item" type="button">Settings</button>
+      <div class="side-menu-group">
+        <button id="menu-close" class="side-menu-close" type="button" aria-label="Close menu">&larr; Back</button>
+        <button id="menu-settings" class="side-menu-item" type="button">Settings</button>
+        <button id="menu-calendar" class="side-menu-item" type="button">Calendar</button>
+      </div>
       <button id="menu-logout" class="side-menu-item side-menu-item--danger" type="button">Log out</button>
     </nav>
+  </div>
+
+  <!-- Asked when a calendar day has more than one workout. -->
+  <div id="day-picker" class="day-picker" hidden>
+    <div class="day-picker-box">
+      <h3 id="day-picker-title" class="day-picker-title">Workouts</h3>
+      <div id="day-picker-list" class="day-picker-list"></div>
+      <button id="day-picker-cancel" class="ghost" type="button">Cancel</button>
+    </div>
   </div>
 
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=27"></script>
+  <script src="/app.js?v=29"></script>
 </body>
 </html>

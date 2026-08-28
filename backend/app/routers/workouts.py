@@ -20,6 +20,7 @@ from ..deps import get_current_user
 from ..models import Routine, User, Workout
 from ..schemas import (
     ExercisePrevious,
+    WorkoutCalendarEntry,
     WorkoutPublic,
     WorkoutSet,
     WorkoutStart,
@@ -194,6 +195,40 @@ def list_workouts(
         .all()
     )
     return [_summarize(w) for w in rows]
+
+
+@router.get("/calendar", response_model=list[WorkoutCalendarEntry])
+def workout_calendar(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Every finished workout as {id, timestamp, routine name} for the Calendar.
+    Lightweight: selects only the columns needed, no JSONB content, no paging."""
+    routine_names = {
+        r.id: r.name
+        for r in db.query(Routine).filter(Routine.user_id == current_user.id).all()
+    }
+    rows = (
+        db.query(
+            Workout.id, Workout.routine_id,
+            Workout.started_at, Workout.finished_at,
+        )
+        .filter(
+            Workout.user_id == current_user.id,
+            Workout.status == "finished",
+            Workout.deleted_at.is_(None),
+        )
+        .order_by(Workout.finished_at.asc().nullsfirst(), Workout.started_at.asc())
+        .all()
+    )
+    return [
+        WorkoutCalendarEntry(
+            id=r.id,
+            at=r.finished_at or r.started_at,
+            name=routine_names.get(r.routine_id, ""),
+        )
+        for r in rows
+    ]
 
 
 @router.get("/export.csv")
