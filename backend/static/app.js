@@ -67,6 +67,7 @@ const workoutFinishBtn = document.getElementById("workout-finish");
 const workoutDiscardBtn = document.getElementById("workout-discard");
 const workoutFab = document.getElementById("workout-fab");
 const workoutFabTime = document.getElementById("workout-fab-time");
+const toastEl = document.getElementById("toast");
 
 // Routine editor sub-view
 const newRoutineBtn = document.getElementById("new-routine");
@@ -504,6 +505,56 @@ let activeWorkout = null;
 let durationTimer = null;
 let workoutSaveTimer = null;
 
+// exercise_id -> { last_sets: [{weight,reps}], best_weight, best_1rm }
+// Drives the PREVIOUS column, set autofill, and PR detection.
+let previousByExercise = {};
+
+function epley1rm(w, r) {
+  return (Number(w) || 0) * (1 + (Number(r) || 0) / 30);
+}
+
+async function loadPreviousForWorkout() {
+  previousByExercise = {};
+  const ids = [
+    ...new Set(
+      (activeWorkout?.content?.exercises || [])
+        .map((e) => e.exercise_id)
+        .filter(Boolean),
+    ),
+  ];
+  if (!ids.length) return;
+  try {
+    const res = await authFetch(
+      `${WORKOUTS_API}/previous?exercise_ids=${encodeURIComponent(ids.join(","))}`,
+    );
+    if (!res.ok) return;
+    previousByExercise = await res.json();
+    autofillFromPrevious();
+    if (!workoutView.hidden) renderWorkout();
+  } catch (err) {
+    /* previous data is a nicety; ignore failures */
+  }
+}
+
+// Pre-fill only sets the user hasn't touched (both weight and reps still blank).
+function autofillFromPrevious() {
+  if (!activeWorkout) return;
+  let changed = false;
+  for (const entry of activeWorkout.content.exercises) {
+    const prev = previousByExercise[entry.exercise_id];
+    if (!prev || !prev.last_sets || !prev.last_sets.length) continue;
+    entry.sets.forEach((set, i) => {
+      const last = prev.last_sets[i];
+      if (last && set.weight == null && set.reps == null && !set.done) {
+        set.weight = last.weight ?? null;
+        set.reps = last.reps ?? null;
+        changed = true;
+      }
+    });
+  }
+  if (changed) scheduleSave();
+}
+
 // On login: find out whether a workout is already in progress.
 async function loadActiveWorkout() {
   try {
@@ -567,6 +618,7 @@ function openWorkout() {
   renderWorkout();
   startDurationTimer();
   updateWorkoutFab();
+  loadPreviousForWorkout();   // fills the PREVIOUS column + autofills, then re-renders
 }
 
 // Back arrow: leave the workout running (it's saved server-side) and go home.
@@ -630,9 +682,11 @@ function buildExerciseBlock(entry, exIndex) {
   });
   block.append(notes);
 
+  const prev = previousByExercise[entry.exercise_id];
+
   const grid = document.createElement("div");
   grid.className = "sets-grid";
-  for (const label of ["SET", "LBS", "REPS", "✓", ""]) {
+  for (const label of ["SET", "PREV", "LBS", "REPS", "✓", ""]) {
     const cell = document.createElement("div");
     cell.className = "sets-grid-head";
     cell.textContent = label;
@@ -642,7 +696,16 @@ function buildExerciseBlock(entry, exIndex) {
   entry.sets.forEach((set, setIndex) => {
     const num = document.createElement("div");
     num.className = "set-num";
+    if (set.pr_weight || set.pr_1rm) num.classList.add("set-num--pr");
     num.textContent = String(setIndex + 1);
+
+    const prevCell = document.createElement("div");
+    prevCell.className = "set-prev";
+    const last = prev && prev.last_sets && prev.last_sets[setIndex];
+    prevCell.textContent =
+      last && (last.weight != null || last.reps != null)
+        ? `${last.weight ?? "–"}×${last.reps ?? "–"}`
+        : "–";
 
     const weight = document.createElement("input");
     weight.className = "set-input";
@@ -676,6 +739,13 @@ function buildExerciseBlock(entry, exIndex) {
     done.checked = !!set.done;
     done.addEventListener("change", () => {
       set.done = done.checked;
+      if (set.done) {
+        checkForPr(entry, set, num);
+      } else {
+        set.pr_weight = false;
+        set.pr_1rm = false;
+        num.classList.remove("set-num--pr");
+      }
       block.classList.toggle("has-done-sets", entry.sets.some((s) => s.done));
       updateWorkoutStats();
       scheduleSave();
@@ -693,7 +763,7 @@ function buildExerciseBlock(entry, exIndex) {
       scheduleSave();
     });
 
-    grid.append(num, weight, reps, doneWrap, removeSet);
+    grid.append(num, prevCell, weight, reps, doneWrap, removeSet);
   });
 
   block.append(grid);
@@ -729,6 +799,45 @@ function updateWorkoutStats() {
   workoutVolumeEl.textContent =
     `${Number.isInteger(volume) ? volume : volume.toFixed(1)} lbs`;
   workoutSetsEl.textContent = String(doneCount);
+}
+
+// When a set is completed, see if it beats the user's best weight / best 1RM for
+// this exercise. The first completed set of an exercise with no history just
+// establishes the baseline (no PR shout).
+function checkForPr(entry, set, numEl) {
+  const w = Number(set.weight) || 0;
+  const r = Number(set.reps) || 0;
+  if (w <= 0) return;
+
+  const prev = entry.exercise_id ? previousByExercise[entry.exercise_id] : null;
+  if (!prev) return;   // custom exercise with no id -> can't track
+
+  const e1 = epley1rm(w, r);
+  const weightPr = prev.best_weight != null && w > prev.best_weight;
+  const oneRmPr = r > 0 && prev.best_1rm != null && e1 > prev.best_1rm;
+
+  set.pr_weight = weightPr;
+  set.pr_1rm = oneRmPr;
+
+  // Raise the bar (also sets the baseline the first time round).
+  if (prev.best_weight == null || w > prev.best_weight) prev.best_weight = w;
+  if (r > 0 && (prev.best_1rm == null || e1 > prev.best_1rm)) prev.best_1rm = e1;
+
+  if (weightPr || oneRmPr) {
+    numEl.classList.add("set-num--pr");
+    const kinds = [];
+    if (weightPr) kinds.push(`Weight PR — ${w} lb`);
+    if (oneRmPr) kinds.push(`1RM PR — ~${Math.round(e1)} lb`);
+    showToast("🏆 " + kinds.join("    "));
+  }
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toastEl.hidden = true; }, 2800);
 }
 
 // --- Duration timer ----------------------------------------------------
@@ -810,6 +919,7 @@ function addExerciseToWorkout(ex) {
   scheduleSave();
   closeExercises();          // back to the workout view
   renderWorkout();
+  loadPreviousForWorkout();  // pull previous / PR data for the new exercise
 }
 
 workoutFinishBtn.addEventListener("click", async () => {

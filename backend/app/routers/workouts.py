@@ -16,7 +16,14 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import Routine, User, Workout
-from ..schemas import WorkoutPublic, WorkoutStart, WorkoutSummary, WorkoutUpdate
+from ..schemas import (
+    ExercisePrevious,
+    WorkoutPublic,
+    WorkoutSet,
+    WorkoutStart,
+    WorkoutSummary,
+    WorkoutUpdate,
+)
 
 router = APIRouter(prefix="/api/workouts", tags=["workouts"])
 
@@ -222,6 +229,76 @@ def discard_active_workout(
     workout.deleted_at = func.now()
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _epley_1rm(weight: float, reps: float) -> float:
+    return weight * (1 + reps / 30)
+
+
+@router.get("/previous", response_model=dict[str, ExercisePrevious])
+def previous_performance(
+    exercise_ids: str = Query(..., description="comma-separated exercise UUIDs"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """For each exercise id: the sets from the most recent finished workout that
+    included it (the "previous" column + autofill), plus the user's all-time best
+    weight and best estimated 1RM (the PR baselines)."""
+    wanted: set[str] = set()
+    for part in exercise_ids.split(","):
+        part = part.strip()
+        if part:
+            try:
+                wanted.add(str(uuid.UUID(part)))
+            except ValueError:
+                pass
+    if not wanted:
+        return {}
+
+    finished = (
+        db.query(Workout)
+        .filter(
+            Workout.user_id == current_user.id,
+            Workout.status == "finished",
+            Workout.deleted_at.is_(None),
+        )
+        .order_by(Workout.finished_at.desc().nullslast(), Workout.started_at.desc())
+        .all()
+    )
+
+    result = {eid: ExercisePrevious() for eid in wanted}
+    got_last: set[str] = set()
+
+    for w in finished:  # newest first
+        for entry in (w.content or {}).get("exercises", []):
+            eid = entry.get("exercise_id")
+            if not eid:
+                continue
+            eid = str(eid)
+            if eid not in wanted:
+                continue
+
+            done_sets = [s for s in entry.get("sets", []) if s.get("done")]
+            for s in done_sets:
+                wt = s.get("weight") or 0
+                rp = s.get("reps") or 0
+                if wt:
+                    prev = result[eid]
+                    if prev.best_weight is None or wt > prev.best_weight:
+                        prev.best_weight = wt
+                    if rp:
+                        e = round(_epley_1rm(wt, rp), 1)
+                        if prev.best_1rm is None or e > prev.best_1rm:
+                            prev.best_1rm = e
+
+            if eid not in got_last and done_sets:
+                result[eid].last_sets = [
+                    WorkoutSet(weight=s.get("weight"), reps=s.get("reps"), done=True)
+                    for s in done_sets
+                ]
+                got_last.add(eid)
+
+    return result
 
 
 @router.get("/{workout_id}", response_model=WorkoutPublic)
