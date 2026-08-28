@@ -258,6 +258,25 @@ body {
 .routine-move:disabled { opacity: 0.35; cursor: default; }
 .routine-menu { font-size: 18px; line-height: 1; }
 
+/* History list rows */
+.history-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+.history-row:hover { border-color: var(--accent); }
+.history-row-title { font-size: 15px; font-weight: 700; }
+.history-row-meta { font-size: 12px; color: var(--muted); }
+
 .ghost {
   margin-top: 14px;
   background: transparent;
@@ -477,6 +496,15 @@ body {
 }
 /* Routine editor drops the "done" column: SET | LBS | REPS | remove */
 .sets-grid--template { grid-template-columns: 2rem 1fr 1fr 1.5rem; }
+/* History detail, read-only: SET | LBS | REPS | ✓/🏆 */
+.sets-grid--readonly { grid-template-columns: 2rem 1fr 1fr 2.5rem; }
+.set-readonly {
+  display: grid;
+  place-items: center;
+  height: 34px;
+  font-size: 14px;
+  color: var(--text);
+}
 .sets-grid-head {
   font-size: 10px;
   font-weight: 700;

@@ -7,16 +7,39 @@ There is at most one *active* workout per user (enforced by a partial unique
 index on the table), so the client can just ask for "my active workout" and get
 an unambiguous answer when it reloads.
 """
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import Routine, User, Workout
-from ..schemas import WorkoutPublic, WorkoutStart, WorkoutUpdate
+from ..schemas import WorkoutPublic, WorkoutStart, WorkoutSummary, WorkoutUpdate
 
 router = APIRouter(prefix="/api/workouts", tags=["workouts"])
+
+
+def _summarize(workout: Workout) -> WorkoutSummary:
+    """Roll a workout's JSONB content up into a History list row."""
+    exercises = (workout.content or {}).get("exercises", [])
+    set_count = 0
+    volume = 0.0
+    for entry in exercises:
+        for s in entry.get("sets", []):
+            if s.get("done"):
+                set_count += 1
+                volume += (s.get("weight") or 0) * (s.get("reps") or 0)
+    return WorkoutSummary(
+        id=workout.id,
+        routine_id=workout.routine_id,
+        started_at=workout.started_at,
+        finished_at=workout.finished_at,
+        exercise_count=len(exercises),
+        set_count=set_count,
+        volume=volume,
+    )
 
 
 def _active_workout(db: Session, user: User) -> Workout | None:
@@ -101,6 +124,29 @@ def start_workout(
     return workout
 
 
+@router.get("", response_model=list[WorkoutSummary])
+def list_workouts(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Finished workouts, newest first -- the History list."""
+    rows = (
+        db.query(Workout)
+        .filter(
+            Workout.user_id == current_user.id,
+            Workout.status == "finished",
+            Workout.deleted_at.is_(None),
+        )
+        .order_by(Workout.finished_at.desc().nullslast(), Workout.started_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    return [_summarize(w) for w in rows]
+
+
 @router.get("/active", response_model=WorkoutPublic | None)
 def get_active_workout(
     db: Session = Depends(get_db),
@@ -149,3 +195,26 @@ def discard_active_workout(
     workout.deleted_at = func.now()
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{workout_id}", response_model=WorkoutPublic)
+def get_workout(
+    workout_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """One of the user's workouts in full -- the History detail view."""
+    workout = (
+        db.query(Workout)
+        .filter(
+            Workout.id == workout_id,
+            Workout.user_id == current_user.id,
+            Workout.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if workout is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Workout not found."
+        )
+    return workout

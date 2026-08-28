@@ -87,6 +87,10 @@ class WorkoutSet(BaseModel):
     weight: float | None = None
     reps: int | None = None
     done: bool = False
+    # Set by the client when a completed set beats the user's previous best for
+    # that exercise. Stored in content so History can show the 🏆 too.
+    pr_weight: bool = False
+    pr_1rm: bool = False
 
 
 class WorkoutExerciseEntry(BaseModel):
@@ -123,6 +127,24 @@ class WorkoutPublic(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class WorkoutSummary(BaseModel):
+    """A finished workout as it appears in the History list (no full set data)."""
+    id: uuid.UUID
+    routine_id: uuid.UUID | None
+    started_at: datetime
+    finished_at: datetime | None
+    exercise_count: int
+    set_count: int          # completed sets only
+    volume: float           # sum of weight * reps over completed sets
+
+
+class ExercisePrevious(BaseModel):
+    """Last-time performance + all-time bests for one exercise."""
+    last_sets: list[WorkoutSet] = Field(default_factory=list)
+    best_weight: float | None = None
+    best_1rm: float | None = None
 
 
 # --- Routines ------------------------------------------------------------

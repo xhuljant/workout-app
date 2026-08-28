@@ -80,6 +80,18 @@ const routineAddExerciseBtn = document.getElementById("routine-add-exercise");
 const routineSaveBtn = document.getElementById("routine-save");
 const routineDeleteBtn = document.getElementById("routine-delete");
 
+// History sub-views
+const historyBtn = document.getElementById("history-btn");
+const historyView = document.getElementById("history-view");
+const historyBackBtn = document.getElementById("history-back");
+const historyStatusEl = document.getElementById("history-status");
+const historyListEl = document.getElementById("history-list");
+const historyDetailView = document.getElementById("history-detail-view");
+const historyDetailBackBtn = document.getElementById("history-detail-back");
+const historyDetailTitleEl = document.getElementById("history-detail-title");
+const historyDetailMetaEl = document.getElementById("history-detail-meta");
+const historyDetailExercisesEl = document.getElementById("history-detail-exercises");
+
 // The user's routines, loaded from the backend after login.
 let routines = [];
 
@@ -170,12 +182,14 @@ async function loadProfile() {
   }
 }
 
+const SUBVIEWS = () => [
+  exercisesView, workoutView, routineView, historyView, historyDetailView,
+];
+
 function showLoggedIn(user) {
   form.hidden = true;
   tabsEl.hidden = true;
-  exercisesView.hidden = true;   // always land on the home screen
-  workoutView.hidden = true;
-  routineView.hidden = true;
+  for (const v of SUBVIEWS()) v.hidden = true;   // always land on the home screen
   home.hidden = false;
   whoEl.textContent = user.display_name;
   loadRoutines();
@@ -186,9 +200,7 @@ function showLoggedOut() {
   form.hidden = false;
   tabsEl.hidden = false;
   home.hidden = true;
-  exercisesView.hidden = true;
-  workoutView.hidden = true;
-  routineView.hidden = true;
+  for (const v of SUBVIEWS()) v.hidden = true;
   stopDurationTimer();
   activeWorkout = null;
   updateWorkoutFab();
@@ -1134,6 +1146,165 @@ routineBackBtn.addEventListener("click", () => {
   if (dirty && !confirm("Discard changes to this routine?")) return;
   closeRoutineEditor();
 });
+
+// --- History ---------------------------------------------------------
+function fmtDate(iso) {
+  return new Date(iso).toLocaleString(undefined, {
+    weekday: "short", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit",
+  });
+}
+
+function fmtVolume(v) {
+  return `${Number.isInteger(v) ? v : Math.round(v)} lb`;
+}
+
+function routineName(routineId) {
+  const r = routines.find((x) => x.id === routineId);
+  return r ? r.name : "Workout";
+}
+
+historyBtn.addEventListener("click", openHistory);
+historyBackBtn.addEventListener("click", () => {
+  historyView.hidden = true;
+  home.hidden = false;
+  updateWorkoutFab();
+});
+historyDetailBackBtn.addEventListener("click", () => {
+  historyDetailView.hidden = true;
+  historyView.hidden = false;
+  updateWorkoutFab();
+});
+
+function openHistory() {
+  home.hidden = true;
+  historyDetailView.hidden = true;
+  historyView.hidden = false;
+  loadHistory();
+}
+
+async function loadHistory() {
+  historyStatusEl.textContent = "Loading…";
+  historyListEl.replaceChildren();
+  try {
+    const res = await authFetch(WORKOUTS_API + "?limit=100");
+    if (!res.ok) {
+      historyStatusEl.textContent = "Could not load history.";
+      return;
+    }
+    renderHistoryList(await res.json());
+  } catch (err) {
+    historyStatusEl.textContent = err.message || "Could not reach the server.";
+  }
+}
+
+function renderHistoryList(items) {
+  historyListEl.replaceChildren();
+  if (items.length === 0) {
+    historyStatusEl.textContent = "No finished workouts yet.";
+    return;
+  }
+  historyStatusEl.textContent = `${items.length} workout${items.length === 1 ? "" : "s"}`;
+
+  for (const w of items) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "history-row";
+
+    const title = document.createElement("span");
+    title.className = "history-row-title";
+    title.textContent = routineName(w.routine_id);
+
+    const meta = document.createElement("span");
+    meta.className = "history-row-meta";
+    meta.textContent =
+      `${fmtDate(w.finished_at || w.started_at)}  ·  ` +
+      `${w.exercise_count} exercise${w.exercise_count === 1 ? "" : "s"}  ·  ` +
+      `${w.set_count} set${w.set_count === 1 ? "" : "s"}  ·  ${fmtVolume(w.volume)}`;
+
+    btn.append(title, meta);
+    btn.addEventListener("click", () => openHistoryDetail(w.id));
+    historyListEl.append(btn);
+  }
+}
+
+async function openHistoryDetail(id) {
+  historyView.hidden = true;
+  historyDetailView.hidden = false;
+  historyDetailMetaEl.textContent = "Loading…";
+  historyDetailExercisesEl.replaceChildren();
+  try {
+    const res = await authFetch(`${WORKOUTS_API}/${id}`);
+    if (!res.ok) {
+      historyDetailMetaEl.textContent = "Could not load this workout.";
+      return;
+    }
+    const w = await res.json();
+    historyDetailTitleEl.textContent = routineName(w.routine_id);
+    historyDetailMetaEl.textContent = fmtDate(w.finished_at || w.started_at);
+    renderWorkoutReadonly(historyDetailExercisesEl, w.content);
+  } catch (err) {
+    historyDetailMetaEl.textContent = err.message || "Could not reach the server.";
+  }
+}
+
+// Read-only render of a workout's content -- used by History detail.
+function renderWorkoutReadonly(container, content) {
+  container.replaceChildren();
+  const exercises = (content && content.exercises) || [];
+
+  for (const entry of exercises) {
+    const block = document.createElement("div");
+    block.className = "workout-exercise";
+
+    const name = document.createElement("div");
+    name.className = "workout-exercise-name";
+    name.textContent = entry.name;
+    block.append(name);
+
+    if (entry.notes) {
+      const notes = document.createElement("p");
+      notes.className = "exercise-meta";
+      notes.textContent = entry.notes;
+      block.append(notes);
+    }
+
+    const grid = document.createElement("div");
+    grid.className = "sets-grid sets-grid--readonly";
+    for (const label of ["SET", "LBS", "REPS", ""]) {
+      const cell = document.createElement("div");
+      cell.className = "sets-grid-head";
+      cell.textContent = label;
+      grid.append(cell);
+    }
+
+    (entry.sets || []).forEach((set, i) => {
+      const num = document.createElement("div");
+      num.className = "set-num";
+      num.textContent = String(i + 1);
+
+      const weight = document.createElement("div");
+      weight.className = "set-readonly";
+      weight.textContent = set.weight ?? "–";
+
+      const reps = document.createElement("div");
+      reps.className = "set-readonly";
+      reps.textContent = set.reps ?? "–";
+
+      const mark = document.createElement("div");
+      mark.className = "set-readonly";
+      const bits = [];
+      if (set.done) bits.push("✓");
+      if (set.pr_weight || set.pr_1rm) bits.push("🏆");
+      mark.textContent = bits.join(" ");
+
+      grid.append(num, weight, reps, mark);
+    });
+
+    block.append(grid);
+    container.append(block);
+  }
+}
 
 // --- On load: if we hold either token, try to use it --------------------
 if (store.access || store.refresh) {

@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=6" />
+  <link rel="stylesheet" href="/style.css?v=8" />
 </head>
 <body>
   <main class="card">
@@ -62,6 +62,8 @@
         <button id="new-routine" class="action" type="button">New Routine</button>
         <button id="exercises" class="action" type="button">Exercises</button>
       </div>
+
+      <button id="history-btn" class="action action--wide" type="button">History</button>
 
       <!-- One button per routine, filled in by app.js. -->
       <div id="routine-list" class="routine-list"></div>
@@ -171,6 +173,26 @@
         <button id="routine-delete" class="ghost workout-discard" type="button">Delete Routine</button>
       </div>
     </section>
+
+    <!-- History list: finished workouts, newest first. -->
+    <section id="history-view" class="subview" hidden>
+      <div class="subview-head">
+        <button id="history-back" class="ghost" type="button" aria-label="Back to home">&larr;</button>
+        <h2 class="subview-title">History</h2>
+      </div>
+      <p id="history-status" class="exercise-status" aria-live="polite"></p>
+      <div id="history-list" class="routine-list"></div>
+    </section>
+
+    <!-- One past workout, read-only. -->
+    <section id="history-detail-view" class="subview" hidden>
+      <div class="subview-head">
+        <button id="history-detail-back" class="ghost" type="button" aria-label="Back to history">&larr;</button>
+        <h2 id="history-detail-title" class="subview-title">Workout</h2>
+      </div>
+      <p id="history-detail-meta" class="exercise-status"></p>
+      <div id="history-detail-exercises" class="workout-exercises"></div>
+    </section>
   </main>
 
   <!-- Floating "jump back to the workout in progress". Shown only while a
@@ -179,6 +201,6 @@
     Resume workout <span id="workout-fab-time" class="workout-fab-time"></span>
   </button>
 
-  <script src="/app.js?v=6"></script>
+  <script src="/app.js?v=8"></script>
 </body>
 </html>
