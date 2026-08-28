@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=16" />
+  <link rel="stylesheet" href="/style.css?v=17" />
 </head>
 <body>
   <main class="card">
@@ -303,9 +303,21 @@
     <button id="rest-skip" class="rest-skip" type="button">Skip</button>
   </div>
 
+  <!-- Change the rest-timer length for this workout. -->
+  <div id="rest-editor" class="rest-editor" hidden>
+    <div class="rest-editor-box">
+      <h3 class="rest-editor-title">Rest timer</h3>
+      <button id="rest-editor-plus" class="rest-editor-step" type="button">+15 sec</button>
+      <div id="rest-editor-value" class="rest-editor-value">1:30</div>
+      <button id="rest-editor-minus" class="rest-editor-step" type="button">&minus;15 sec</button>
+      <button id="rest-editor-save" class="submit" type="button">Save</button>
+      <button id="rest-editor-cancel" class="ghost" type="button">Cancel</button>
+    </div>
+  </div>
+
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=16"></script>
+  <script src="/app.js?v=17"></script>
 </body>
 </html>

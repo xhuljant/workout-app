@@ -256,9 +256,12 @@ def update_active_workout(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Overwrite the active workout's contents (exercises, sets, notes)."""
+    """Overwrite the active workout's contents (exercises, sets, notes), and the
+    rest-timer length when supplied."""
     workout = _require_active(db, current_user)
     workout.content = body.content.model_dump(mode="json")
+    if body.rest_seconds is not None:
+        workout.rest_seconds = body.rest_seconds
     db.commit()
     db.refresh(workout)
     return workout

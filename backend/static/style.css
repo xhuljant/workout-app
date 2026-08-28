@@ -812,7 +812,60 @@ button.settings-section { width: 100%; }
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
+
+/* Modal to change the rest-timer length for the workout */
+.rest-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.6);
+}
+.rest-editor-box {
+  width: 100%;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 22px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-align: center;
+}
+.rest-editor-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.rest-editor-value {
+  font-size: 36px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.rest-editor-step {
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.rest-editor-step:hover:not(:disabled) { border-color: var(--accent); }
+.rest-editor-step:disabled { opacity: 0.4; cursor: default; }
+.rest-editor-box .ghost { margin-top: 0; }
 
 /* Keep the workout's Finish button scrollable clear of the rest bar */
 #workout-view.has-rest-timer { padding-bottom: 96px; }

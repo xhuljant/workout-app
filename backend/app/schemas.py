@@ -123,6 +123,7 @@ class WorkoutContent(BaseModel):
 class WorkoutUpdate(BaseModel):
     """Body for PUT /api/workouts/active."""
     content: WorkoutContent
+    rest_seconds: int | None = Field(default=None, ge=0, le=3600)
 
 
 class WorkoutStart(BaseModel):

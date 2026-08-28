@@ -81,6 +81,14 @@ const restMinusBtn = document.getElementById("rest-minus");
 const restPlusBtn = document.getElementById("rest-plus");
 const restSkipBtn = document.getElementById("rest-skip");
 
+// Rest-length editor modal
+const restEditorEl = document.getElementById("rest-editor");
+const restEditorValueEl = document.getElementById("rest-editor-value");
+const restEditorPlusBtn = document.getElementById("rest-editor-plus");
+const restEditorMinusBtn = document.getElementById("rest-editor-minus");
+const restEditorSaveBtn = document.getElementById("rest-editor-save");
+const restEditorCancelBtn = document.getElementById("rest-editor-cancel");
+
 // Routine editor sub-view
 const newRoutineBtn = document.getElementById("new-routine");
 const routineView = document.getElementById("routine-view");
@@ -237,7 +245,9 @@ const ALL_VIEWS = [
 
 function showView(el) {
   for (const v of ALL_VIEWS) v.hidden = v !== el;
-  if (el !== workoutView) stopRestTimer();
+  // Leaving the workout screen only detaches the bar -- the countdown keeps
+  // running and re-appears when you come back.
+  if (el !== workoutView) hideRestTimer();
 }
 
 function showLoggedIn(user) {
@@ -257,7 +267,7 @@ function showLoggedOut() {
   tabsEl.hidden = false;
   for (const v of ALL_VIEWS) v.hidden = true;
   stopDurationTimer();
-  stopRestTimer();
+  endRestTimer();
   activeWorkout = null;
   refreshStartButton();
 }
@@ -732,6 +742,7 @@ function openWorkout() {
   showView(workoutView);
   renderWorkout();
   startDurationTimer();
+  resumeRestTimer();         // re-show the countdown if one's still running
   refreshStartButton();      // turn the home button green + start the elapsed clock
   loadPreviousForWorkout();  // fills the PREVIOUS column + autofills, then re-renders
 }
@@ -798,8 +809,8 @@ function buildExerciseBlock(entry, exIndex) {
   const restLabel = document.createElement("button");
   restLabel.type = "button";
   restLabel.className = "exercise-rest";
-  restLabel.textContent = `⏱ Rest Timer: ${fmtRest(workoutRestSeconds())}`;
-  restLabel.addEventListener("click", () => startRestTimer());
+  restLabel.textContent = `Rest Timer: ${fmtRest(workoutRestSeconds())}`;
+  restLabel.addEventListener("click", openRestEditor);
   block.append(restLabel);
 
   const prev = previousByExercise[entry.exercise_id];
@@ -991,9 +1002,12 @@ function formatDuration(ms) {
 }
 
 // --- Rest timer ------------------------------------------------------
+// The running countdown is kept in localStorage keyed by workout id, so it
+// survives leaving the workout screen, a reload, or the app being closed.
 let restEndsAt = 0;
 let restTotalMs = 0;
 let restInterval = null;
+const REST_KEY = "rest";
 
 function workoutRestSeconds() {
   return (
@@ -1011,20 +1025,65 @@ function fmtRest(s) {
   return sec ? `${m}min ${sec}s` : `${m}min`;
 }
 
-function startRestTimer() {
-  restTotalMs = workoutRestSeconds() * 1000;
-  restEndsAt = Date.now() + restTotalMs;
+function persistRest() {
+  try {
+    if (!activeWorkout || !restInterval) return;
+    localStorage.setItem(
+      REST_KEY,
+      JSON.stringify({ workoutId: activeWorkout.id, endsAt: restEndsAt, totalMs: restTotalMs }),
+    );
+  } catch (err) { /* private mode etc. */ }
+}
+
+function readPersistedRest() {
+  try {
+    return JSON.parse(localStorage.getItem(REST_KEY) || "null");
+  } catch (err) {
+    return null;
+  }
+}
+
+function clearPersistedRest() {
+  try { localStorage.removeItem(REST_KEY); } catch (err) { /* ignore */ }
+}
+
+function beginRestInterval() {
   restTimerEl.hidden = false;
   workoutView.classList.add("has-rest-timer");
   if (restInterval) clearInterval(restInterval);
-  tickRest();
   restInterval = setInterval(tickRest, 250);
+  tickRest();
+}
+
+// Fresh countdown (a set was checked, or the label was tapped after editing).
+function startRestTimer() {
+  restTotalMs = workoutRestSeconds() * 1000;
+  restEndsAt = Date.now() + restTotalMs;
+  beginRestInterval();
+  persistRest();
+}
+
+// Re-attach the bar to a countdown that's still running (entering the workout
+// screen / after a reload).
+function resumeRestTimer() {
+  const saved = readPersistedRest();
+  if (
+    !activeWorkout || !saved ||
+    saved.workoutId !== activeWorkout.id ||
+    saved.endsAt <= Date.now()
+  ) {
+    endRestTimer();
+    return;
+  }
+  restEndsAt = saved.endsAt;
+  restTotalMs = saved.totalMs || (saved.endsAt - Date.now());
+  beginRestInterval();
 }
 
 function tickRest() {
   const rem = restEndsAt - Date.now();
   if (rem <= 0) {
-    stopRestTimer();
+    endRestTimer();
     if (navigator.vibrate) navigator.vibrate(200);
     return;
   }
@@ -1032,24 +1091,74 @@ function tickRest() {
   restProgressEl.style.width = Math.max(0, Math.min(1, rem / restTotalMs)) * 100 + "%";
 }
 
-function stopRestTimer() {
+// Just detach the bar; the countdown keeps its state so it can resume.
+function hideRestTimer() {
   if (restInterval) clearInterval(restInterval);
   restInterval = null;
   restTimerEl.hidden = true;
   workoutView.classList.remove("has-rest-timer");
 }
 
+// The rest is over / skipped / the workout ended -- wipe it.
+function endRestTimer() {
+  hideRestTimer();
+  restEndsAt = 0;
+  restTotalMs = 0;
+  clearPersistedRest();
+}
+
 restMinusBtn.addEventListener("click", () => {
   restEndsAt = Math.max(Date.now() + 1000, restEndsAt - 15000);
   restTotalMs = Math.max(15000, restTotalMs - 15000);
+  persistRest();
   tickRest();
 });
 restPlusBtn.addEventListener("click", () => {
   restEndsAt += 15000;
   restTotalMs += 15000;
+  persistRest();
   tickRest();
 });
-restSkipBtn.addEventListener("click", stopRestTimer);
+restSkipBtn.addEventListener("click", endRestTimer);
+
+// --- Rest-length editor (the "Rest Timer: ..." label opens this) ---
+let restEditorValue = 90;
+
+function openRestEditor() {
+  restEditorValue = workoutRestSeconds();
+  renderRestEditor();
+  restEditorEl.hidden = false;
+}
+function renderRestEditor() {
+  restEditorValueEl.textContent = formatDuration(restEditorValue * 1000);
+  restEditorMinusBtn.disabled = restEditorValue <= 15;
+  restEditorPlusBtn.disabled = restEditorValue >= 3600;
+}
+restEditorPlusBtn.addEventListener("click", () => {
+  restEditorValue = Math.min(3600, restEditorValue + 15);
+  renderRestEditor();
+});
+restEditorMinusBtn.addEventListener("click", () => {
+  restEditorValue = Math.max(15, restEditorValue - 15);
+  renderRestEditor();
+});
+restEditorCancelBtn.addEventListener("click", () => { restEditorEl.hidden = true; });
+restEditorEl.addEventListener("click", (e) => {
+  if (e.target === restEditorEl) restEditorEl.hidden = true;   // tap the backdrop
+});
+restEditorSaveBtn.addEventListener("click", async () => {
+  restEditorEl.hidden = true;
+  if (!activeWorkout) return;
+  activeWorkout.rest_seconds = restEditorValue;
+  renderWorkout();   // refresh every "Rest Timer: ..." label
+  try {
+    await authFetch(WORKOUTS_API + "/active", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: activeWorkout.content, rest_seconds: restEditorValue }),
+    });
+  } catch (err) { /* the label already updated locally */ }
+});
 
 // --- Saving ----------------------------------------------------------
 function scheduleSave() {
@@ -1175,6 +1284,7 @@ function endWorkoutUI() {
   clearTimeout(workoutSaveTimer);
   workoutSaveTimer = null;
   stopDurationTimer();
+  endRestTimer();
   refreshStartButton();
   showView(home);
   loadHomeHistory();   // a just-finished workout should appear in the preview
