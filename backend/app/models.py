@@ -1,8 +1,8 @@
 """Database models (tables).
 
-Tables so far: `users`, `exercises`, `workouts`, `routines`. Every table in this
-app follows the same sync-friendly conventions we agreed on, so a future offline
-client can be added without redesigning the database:
+Tables so far: `users`, `exercises`, `workouts`, `routines`, `folders`. Every
+table in this app follows the same sync-friendly conventions we agreed on, so a
+future offline client can be added without redesigning the database:
 
   - id          : a UUID (not an auto-increment number) so a client can create a
                   row and its id without asking the server first.
@@ -221,9 +221,15 @@ class Routine(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), index=True, nullable=False
     )
 
+    # Which folder it's filed under on the home screen. NULL is coalesced to the
+    # user's default ("My Routines") folder by the API.
+    folder_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("folders.id"), nullable=True
+    )
+
     name: Mapped[str] = mapped_column(String, nullable=False)
 
-    # Home-screen ordering. Lower shows first.
+    # Ordering within the folder. Lower shows first.
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # {"exercises": [{"exercise_id", "name", "sets": [{"weight", "reps"}]}]}
@@ -243,4 +249,54 @@ class Routine(Base):
     )
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+
+class Folder(Base):
+    """A named group of routines on the home screen. Every user has one
+    undeletable `is_default` folder ("My Routines"); routines with no explicit
+    folder fall into it.
+    """
+
+    __tablename__ = "folders"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), index=True, nullable=False
+    )
+
+    name: Mapped[str] = mapped_column(String, nullable=False)
+
+    # Ordering among folders. The default folder is pinned first.
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # Whether the folder is shown collapsed on the home screen (per account).
+    collapsed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # True for the one "My Routines" folder that can't be renamed away / deleted.
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_one_default_folder_per_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text("is_default AND deleted_at IS NULL"),
+        ),
     )

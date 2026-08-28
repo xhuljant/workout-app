@@ -186,6 +186,7 @@ class RoutineCreate(BaseModel):
     """Body for POST /api/routines and PUT /api/routines/{id}."""
     name: str = Field(min_length=1, max_length=200)
     content: RoutineContent
+    folder_id: uuid.UUID | None = None
 
 
 # PUT uses the same shape as create.
@@ -193,7 +194,9 @@ RoutineUpdate = RoutineCreate
 
 
 class RoutineReorder(BaseModel):
-    """Body for PUT /api/routines/order -- routine ids in the desired order."""
+    """Body for PUT /api/routines/order -- routine ids in the desired order,
+    within one folder."""
+    folder_id: uuid.UUID
     ids: list[uuid.UUID]
 
 
@@ -201,7 +204,34 @@ class RoutinePublic(BaseModel):
     id: uuid.UUID
     name: str
     position: int
+    folder_id: uuid.UUID | None
     content: RoutineContent
     created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# --- Folders -----------------------------------------------------------
+
+class FolderCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class FolderUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    collapsed: bool | None = None
+
+
+class FolderReorder(BaseModel):
+    """Body for PUT /api/folders/order -- custom folders in the desired order."""
+    ids: list[uuid.UUID]
+
+
+class FolderPublic(BaseModel):
+    id: uuid.UUID
+    name: str
+    position: int
+    collapsed: bool
+    is_default: bool
 
     model_config = ConfigDict(from_attributes=True)

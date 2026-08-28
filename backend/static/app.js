@@ -41,6 +41,9 @@ const logoutBtn = document.getElementById("logout");
 const passwordInput = document.getElementById("password");
 const routineList = document.getElementById("routine-list");
 const routineEmpty = document.getElementById("routine-empty");
+const newFolderBtn = document.getElementById("new-folder-btn");
+const editRoutinesBtn = document.getElementById("edit-routines-btn");
+const routineFolderSelect = document.getElementById("routine-folder");
 
 // Exercises sub-view
 const exercisesBtn = document.getElementById("exercises");
@@ -124,8 +127,10 @@ const settingsDeleteBtn = document.getElementById("settings-delete");
 // The logged-in user's profile (from /api/auth/me), kept for the Settings screen.
 let currentUser = null;
 
-// The user's routines, loaded from the backend after login.
+// The user's routines + folders, loaded from the backend after login.
 let routines = [];
+let folders = [];
+let editMode = false;   // home-screen "Edit" toggle: shows reorder / rename / delete
 
 // Current mode: "login" or "register".
 let mode = "login";
@@ -227,6 +232,7 @@ function showView(el) {
 
 function showLoggedIn(user) {
   currentUser = user;
+  editMode = false;
   form.hidden = true;
   tabsEl.hidden = true;
   showView(home);
@@ -245,47 +251,121 @@ function showLoggedOut() {
   refreshStartButton();
 }
 
-// One row per routine: tap the name to start a workout from it, ▲/▼ to reorder,
-// ⋮ to open the editor. A "create one" message shows when there are none.
-function renderRoutines() {
+function moveBtn(dir, disabled, onClick) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "routine-move";
+  b.textContent = dir < 0 ? "▲" : "▼";
+  b.setAttribute("aria-label", dir < 0 ? "Move up" : "Move down");
+  b.disabled = disabled;
+  b.addEventListener("click", (e) => { e.stopPropagation(); onClick(); });
+  return b;
+}
+
+// Folders, each holding its routine rows. "Edit" mode reveals reorder / rename /
+// delete controls; otherwise it's just tappable folder headers + routine names.
+function renderFolders() {
   routineList.replaceChildren();
-  routineEmpty.hidden = routines.length > 0;
+  routineEmpty.hidden = true;   // each folder shows its own empty state now
+  editRoutinesBtn.textContent = editMode ? "Done" : "Edit";
 
-  routines.forEach((routine, i) => {
-    const row = document.createElement("div");
-    row.className = "routine-row";
+  const nonDefault = folders.filter((f) => !f.is_default);
 
-    const nameBtn = document.createElement("button");
-    nameBtn.type = "button";
-    nameBtn.className = "routine-name-btn";
-    nameBtn.textContent = routine.name;
-    nameBtn.addEventListener("click", () => startRoutine(routine));
+  folders.forEach((folder) => {
+    const section = document.createElement("div");
+    section.className = "folder" + (folder.collapsed ? " folder--collapsed" : "");
 
-    const up = document.createElement("button");
-    up.type = "button";
-    up.className = "routine-move";
-    up.textContent = "▲";
-    up.setAttribute("aria-label", "Move up");
-    up.disabled = i === 0;
-    up.addEventListener("click", () => moveRoutine(i, -1));
+    const mine = routines.filter((r) => r.folder_id === folder.id);
 
-    const down = document.createElement("button");
-    down.type = "button";
-    down.className = "routine-move";
-    down.textContent = "▼";
-    down.setAttribute("aria-label", "Move down");
-    down.disabled = i === routines.length - 1;
-    down.addEventListener("click", () => moveRoutine(i, 1));
+    // A div (not a button) so the edit-mode buttons can nest inside it.
+    const head = document.createElement("div");
+    head.className = "folder-head";
+    head.setAttribute("role", "button");
+    head.tabIndex = 0;
+    head.addEventListener("click", () => toggleFolder(folder));
+    head.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFolder(folder); }
+    });
 
-    const menu = document.createElement("button");
-    menu.type = "button";
-    menu.className = "routine-menu";
-    menu.textContent = "⋮";
-    menu.setAttribute("aria-label", "Edit routine");
-    menu.addEventListener("click", () => openRoutineEditor(routine));
+    const chevron = document.createElement("span");
+    chevron.className = "folder-chevron";
+    chevron.textContent = "▾";
+    const nameEl = document.createElement("span");
+    nameEl.className = "folder-name";
+    nameEl.textContent = folder.name;
+    const countEl = document.createElement("span");
+    countEl.className = "folder-count";
+    countEl.textContent = `(${mine.length})`;
+    head.append(chevron, nameEl, countEl);
 
-    row.append(nameBtn, up, down, menu);
-    routineList.append(row);
+    if (editMode) {
+      const di = nonDefault.indexOf(folder);
+      if (!folder.is_default) {
+        head.append(
+          moveBtn(-1, di === 0, () => reorderFolder(di, -1)),
+          moveBtn(1, di === nonDefault.length - 1, () => reorderFolder(di, 1)),
+        );
+      }
+      const ren = document.createElement("button");
+      ren.type = "button";
+      ren.className = "folder-edit-btn";
+      ren.textContent = "✎";
+      ren.setAttribute("aria-label", "Rename folder");
+      ren.addEventListener("click", (e) => { e.stopPropagation(); renameFolder(folder); });
+      head.append(ren);
+      if (!folder.is_default) {
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "folder-edit-btn";
+        del.textContent = "🗑";
+        del.setAttribute("aria-label", "Delete folder");
+        del.addEventListener("click", (e) => { e.stopPropagation(); deleteFolder(folder); });
+        head.append(del);
+      }
+    }
+
+    section.append(head);
+
+    if (!folder.collapsed) {
+      const body = document.createElement("div");
+      body.className = "folder-body";
+      if (mine.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "folder-empty";
+        empty.textContent = "No routines here yet.";
+        body.append(empty);
+      }
+      mine.forEach((routine, i) => {
+        const row = document.createElement("div");
+        row.className = "routine-row";
+
+        const nameBtn = document.createElement("button");
+        nameBtn.type = "button";
+        nameBtn.className = "routine-name-btn";
+        nameBtn.textContent = routine.name;
+        nameBtn.addEventListener("click", () => startRoutine(routine));
+        row.append(nameBtn);
+
+        if (editMode) {
+          row.append(
+            moveBtn(-1, i === 0, () => moveRoutineInFolder(folder, mine, i, -1)),
+            moveBtn(1, i === mine.length - 1, () => moveRoutineInFolder(folder, mine, i, 1)),
+          );
+          const menu = document.createElement("button");
+          menu.type = "button";
+          menu.className = "routine-menu";
+          menu.textContent = "⋮";
+          menu.setAttribute("aria-label", "Edit routine");
+          menu.addEventListener("click", () => openRoutineEditor(routine));
+          row.append(menu);
+        }
+
+        body.append(row);
+      });
+      section.append(body);
+    }
+
+    routineList.append(section);
   });
 }
 
@@ -1024,34 +1104,132 @@ const ROUTINES_API = "/api/routines";
 let editingRoutine = null;
 let originalRoutineJSON = "";
 
+const FOLDERS_API = "/api/folders";
+
 async function loadRoutines() {
   try {
-    const res = await authFetch(ROUTINES_API);
-    routines = res.ok ? await res.json() : [];
+    const [fRes, rRes] = await Promise.all([
+      authFetch(FOLDERS_API),
+      authFetch(ROUTINES_API),
+    ]);
+    folders = fRes.ok ? await fRes.json() : [];
+    routines = rRes.ok ? await rRes.json() : [];
   } catch (err) {
+    folders = [];
     routines = [];
   }
-  renderRoutines();
+  renderFolders();
 }
 
-// Move the routine at index i by dir (-1 up, +1 down) and persist the new order.
-async function moveRoutine(i, dir) {
+function defaultFolderId() {
+  const d = folders.find((f) => f.is_default);
+  return d ? d.id : (folders[0] && folders[0].id) || null;
+}
+
+// --- Folder mutations ---
+async function toggleFolder(folder) {
+  folder.collapsed = !folder.collapsed;
+  renderFolders();
+  try {
+    await authFetch(`${FOLDERS_API}/${folder.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ collapsed: folder.collapsed }),
+    });
+  } catch (err) {
+    /* best effort */
+  }
+}
+
+newFolderBtn.addEventListener("click", async () => {
+  const name = (prompt("New folder name") || "").trim();
+  if (!name) return;
+  try {
+    const res = await authFetch(FOLDERS_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (res.ok) await loadRoutines();
+  } catch (err) {
+    /* ignore */
+  }
+});
+
+async function renameFolder(folder) {
+  const name = (prompt("Rename folder", folder.name) || "").trim();
+  if (!name || name === folder.name) return;
+  try {
+    const res = await authFetch(`${FOLDERS_API}/${folder.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (res.ok) await loadRoutines();
+  } catch (err) {
+    /* ignore */
+  }
+}
+
+async function deleteFolder(folder) {
+  if (!confirm(`Delete folder "${folder.name}"? Its routines move to My Routines.`)) return;
+  try {
+    const res = await authFetch(`${FOLDERS_API}/${folder.id}`, { method: "DELETE" });
+    if (res.status === 204) await loadRoutines();
+  } catch (err) {
+    /* ignore */
+  }
+}
+
+// Reorder among the non-default folders (di = index within that subset).
+async function reorderFolder(di, dir) {
+  const nonDefault = folders.filter((f) => !f.is_default);
+  const j = di + dir;
+  if (j < 0 || j >= nonDefault.length) return;
+  [nonDefault[di], nonDefault[j]] = [nonDefault[j], nonDefault[di]];
+  folders = folders.filter((f) => f.is_default).concat(nonDefault);
+  renderFolders();
+  try {
+    const res = await authFetch(FOLDERS_API + "/order", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: nonDefault.map((f) => f.id) }),
+    });
+    if (res.ok) folders = await res.json();
+  } catch (err) {
+    loadRoutines();
+    return;
+  }
+  renderFolders();
+}
+
+// Reorder a routine within its folder. `mine` is that folder's ordered routines.
+async function moveRoutineInFolder(folder, mine, i, dir) {
   const j = i + dir;
-  if (j < 0 || j >= routines.length) return;
-  [routines[i], routines[j]] = [routines[j], routines[i]];
-  renderRoutines();
+  if (j < 0 || j >= mine.length) return;
+  [mine[i], mine[j]] = [mine[j], mine[i]];
+  // Reflect the new order in the flat `routines` array before re-render.
+  const others = routines.filter((r) => r.folder_id !== folder.id);
+  routines = others.concat(mine);
+  renderFolders();
   try {
     const res = await authFetch(ROUTINES_API + "/order", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: routines.map((r) => r.id) }),
+      body: JSON.stringify({ folder_id: folder.id, ids: mine.map((r) => r.id) }),
     });
     if (res.ok) routines = await res.json();
   } catch (err) {
-    loadRoutines();   // reload the real order if the save failed
+    loadRoutines();
+    return;
   }
-  renderRoutines();
+  renderFolders();
 }
+
+editRoutinesBtn.addEventListener("click", () => {
+  editMode = !editMode;
+  renderFolders();
+});
 
 // Start (or resume) a workout from a routine.
 async function startRoutine(routine) {
@@ -1078,9 +1256,10 @@ async function startRoutine(routine) {
 newRoutineBtn.addEventListener("click", () => openRoutineEditor(null));
 
 function openRoutineEditor(routine) {
+  const folderId = routine ? routine.folder_id : defaultFolderId();
   editingRoutine = routine
-    ? { id: routine.id, name: routine.name, content: deepCopy(routine.content) }
-    : { name: "", content: { exercises: [] } };
+    ? { id: routine.id, name: routine.name, folder_id: folderId, content: deepCopy(routine.content) }
+    : { name: "", folder_id: folderId, content: { exercises: [] } };
   if (!editingRoutine.content || !Array.isArray(editingRoutine.content.exercises)) {
     editingRoutine.content = { exercises: [] };
   }
@@ -1089,6 +1268,15 @@ function openRoutineEditor(routine) {
   routineTitleEl.textContent = routine ? "Edit Routine" : "New Routine";
   routineNameInput.value = editingRoutine.name;
   routineDeleteBtn.hidden = !routine;
+
+  routineFolderSelect.replaceChildren();
+  for (const f of folders) {
+    const opt = document.createElement("option");
+    opt.value = f.id;
+    opt.textContent = f.name;
+    routineFolderSelect.append(opt);
+  }
+  routineFolderSelect.value = editingRoutine.folder_id || defaultFolderId() || "";
 
   showView(routineView);
   renderRoutineEditor();
@@ -1105,6 +1293,10 @@ function deepCopy(obj) {
 
 routineNameInput.addEventListener("input", () => {
   if (editingRoutine) editingRoutine.name = routineNameInput.value;
+});
+
+routineFolderSelect.addEventListener("change", () => {
+  if (editingRoutine) editingRoutine.folder_id = routineFolderSelect.value;
 });
 
 function renderRoutineEditor() {
@@ -1226,7 +1418,11 @@ routineSaveBtn.addEventListener("click", async () => {
     return;
   }
   routineSaveBtn.disabled = true;
-  const payload = { name, content: editingRoutine.content };
+  const payload = {
+    name,
+    content: editingRoutine.content,
+    folder_id: editingRoutine.folder_id || null,
+  };
   const editing = Boolean(editingRoutine.id);
   try {
     const res = await authFetch(

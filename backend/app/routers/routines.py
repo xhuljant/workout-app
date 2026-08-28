@@ -14,10 +14,29 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import get_current_user
-from ..models import Routine, User
+from ..models import Folder, Routine, User
 from ..schemas import RoutineCreate, RoutinePublic, RoutineReorder, RoutineUpdate
+from .folders import _default_folder
 
 router = APIRouter(prefix="/api/routines", tags=["routines"])
+
+
+def _resolve_folder_id(db: Session, user: User, folder_id) -> uuid.UUID:
+    """Use the requested folder if it's one of the user's; otherwise fall back to
+    the default "My Routines" folder."""
+    if folder_id is not None:
+        owned = (
+            db.query(Folder)
+            .filter(
+                Folder.id == folder_id,
+                Folder.user_id == user.id,
+                Folder.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if owned is not None:
+            return owned.id
+    return _default_folder(db, user).id
 
 
 def _owned_routine(db: Session, user: User, routine_id: uuid.UUID) -> Routine:
@@ -51,7 +70,8 @@ def list_routines(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """The user's routines, in home-screen order."""
+    """The user's routines, in home-screen order. (The default folder is ensured
+    by GET /api/folders, which the client always calls alongside this.)"""
     return _user_routines(db, current_user)
 
 
@@ -61,14 +81,20 @@ def create_routine(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Create a routine. New routines go to the bottom of the list."""
+    """Create a routine. New routines go to the bottom of their folder."""
+    folder_id = _resolve_folder_id(db, current_user, body.folder_id)
     highest = (
         db.query(func.max(Routine.position))
-        .filter(Routine.user_id == current_user.id, Routine.deleted_at.is_(None))
+        .filter(
+            Routine.user_id == current_user.id,
+            Routine.folder_id == folder_id,
+            Routine.deleted_at.is_(None),
+        )
         .scalar()
     )
     routine = Routine(
         user_id=current_user.id,
+        folder_id=folder_id,
         name=body.name.strip(),
         position=(highest + 1) if highest is not None else 0,
         content=body.content.model_dump(mode="json"),
@@ -85,9 +111,12 @@ def reorder_routines(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Set each routine's position from its index in the given id list. Ids that
-    aren't the user's (or don't exist) are ignored."""
-    mine = {r.id: r for r in _user_routines(db, current_user)}
+    """Reposition the routines within one folder from the given id order."""
+    mine = {
+        r.id: r
+        for r in _user_routines(db, current_user)
+        if r.folder_id == body.folder_id
+    }
     for index, routine_id in enumerate(body.ids):
         routine = mine.get(routine_id)
         if routine is not None:
@@ -103,8 +132,22 @@ def update_routine(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Overwrite a routine's name and contents."""
+    """Overwrite a routine's name, folder, and contents."""
     routine = _owned_routine(db, current_user, routine_id)
+    new_folder_id = _resolve_folder_id(db, current_user, body.folder_id)
+    if new_folder_id != routine.folder_id:
+        # Moved folders -> drop to the bottom of the destination.
+        highest = (
+            db.query(func.max(Routine.position))
+            .filter(
+                Routine.user_id == current_user.id,
+                Routine.folder_id == new_folder_id,
+                Routine.deleted_at.is_(None),
+            )
+            .scalar()
+        )
+        routine.position = (highest + 1) if highest is not None else 0
+        routine.folder_id = new_folder_id
     routine.name = body.name.strip()
     routine.content = body.content.model_dump(mode="json")
     db.commit()

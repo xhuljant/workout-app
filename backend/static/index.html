@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=14" />
+  <link rel="stylesheet" href="/style.css?v=15" />
 </head>
 <body>
   <main class="card">
@@ -68,12 +68,20 @@
         <button id="exercises" class="action" type="button">Exercises</button>
       </div>
 
-      <!-- One button per routine, filled in by app.js. -->
+      <div class="routines-head">
+        <h3 class="home-history-title">Routines</h3>
+        <div class="routines-head-actions">
+          <button id="new-folder-btn" class="ghost" type="button">+ Folder</button>
+          <button id="edit-routines-btn" class="ghost" type="button">Edit</button>
+        </div>
+      </div>
+
+      <!-- Folder sections, each with its routine rows -- filled in by app.js. -->
       <div id="routine-list" class="routine-list"></div>
 
-      <!-- Shown instead of the list while the user has no routines yet. -->
+      <!-- Shown when the user has no routines at all. -->
       <p id="routine-empty" class="routine-empty" hidden>
-        No routines yet. Create a custom routine to get started.
+        No routines yet. Create one with New Routine.
       </p>
 
       <!-- The 3 most recent finished workouts, always at the bottom. -->
@@ -169,6 +177,10 @@
       <div class="field">
         <label for="routine-name">Routine name</label>
         <input id="routine-name" type="text" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="routine-folder">Folder</label>
+        <select id="routine-folder"></select>
       </div>
 
       <div id="routine-exercises" class="workout-exercises"></div>
@@ -281,6 +293,6 @@
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=14"></script>
+  <script src="/app.js?v=15"></script>
 </body>
 </html>
