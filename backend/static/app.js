@@ -496,23 +496,45 @@ async function loadExercises() {
       return;
     }
     allExercises = await res.json();
-    populateExerciseFilters();
+    populateExerciseOptions();
     applyExerciseFilters();
   } catch (err) {
     exerciseStatus.textContent = err.message || "Could not reach the server.";
   }
 }
 
-// Rebuild the equipment / body-part dropdowns from the loaded library.
-function populateExerciseFilters() {
+// From the loaded library: rebuild the filter dropdowns, and the datalists that
+// suggest values on the "New exercise" form.
+function populateExerciseOptions() {
   const equip = new Set();
   const muscles = new Set();
+  const categories = new Set();
   for (const ex of allExercises) {
     if (ex.equipment) equip.add(ex.equipment);
+    if (ex.category) categories.add(ex.category);
     for (const m of ex.primary_muscles || []) muscles.add(m);
   }
-  fillOptions(filterEquipmentSel, "All equipment", [...equip].sort());
-  fillOptions(filterMuscleSel, "All body parts", [...muscles].sort());
+  const equipSorted = [...equip].sort();
+  const muscleSorted = [...muscles].sort();
+
+  fillOptions(filterEquipmentSel, "All equipment", equipSorted);
+  fillOptions(filterMuscleSel, "All body parts", muscleSorted);
+
+  fillDatalist("category-options", [...categories].sort());
+  fillDatalist("equipment-options", equipSorted);
+  fillDatalist("muscle-options", muscleSorted);
+}
+
+function fillDatalist(id, values) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.replaceChildren(
+    ...values.map((v) => {
+      const o = document.createElement("option");
+      o.value = v;
+      return o;
+    }),
+  );
 }
 
 function fillOptions(sel, allLabel, values) {
@@ -812,11 +834,15 @@ addExerciseForm.addEventListener("submit", async (event) => {
     return;
   }
 
+  // The taxonomy fields are lower-cased so custom entries line up with the
+  // seeded library (which is all lower-case) and the filters don't fragment.
   const payload = {
     name,
-    category: document.getElementById("ex-category").value.trim() || null,
-    equipment: document.getElementById("ex-equipment").value.trim() || null,
-    primary_muscles: splitList(document.getElementById("ex-muscles").value, ","),
+    category: document.getElementById("ex-category").value.trim().toLowerCase() || null,
+    equipment: document.getElementById("ex-equipment").value.trim().toLowerCase() || null,
+    primary_muscles: splitList(document.getElementById("ex-muscles").value, ",").map((m) =>
+      m.toLowerCase(),
+    ),
     instructions: splitList(document.getElementById("ex-instructions").value, "\n"),
   };
 

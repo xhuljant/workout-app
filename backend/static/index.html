@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=23" />
+  <link rel="stylesheet" href="/style.css?v=24" />
 </head>
 <body>
   <main class="card">
@@ -129,15 +129,15 @@
         </div>
         <div class="field">
           <label for="ex-category">Category <span class="opt">optional</span></label>
-          <input id="ex-category" name="category" type="text" />
+          <input id="ex-category" name="category" type="text" list="category-options" autocomplete="off" />
         </div>
         <div class="field">
           <label for="ex-equipment">Equipment <span class="opt">optional</span></label>
-          <input id="ex-equipment" name="equipment" type="text" />
+          <input id="ex-equipment" name="equipment" type="text" list="equipment-options" autocomplete="off" />
         </div>
         <div class="field">
           <label for="ex-muscles">Primary muscles <span class="opt">optional, comma-separated</span></label>
-          <input id="ex-muscles" name="primary_muscles" type="text" />
+          <input id="ex-muscles" name="primary_muscles" type="text" list="muscle-options" autocomplete="off" />
         </div>
         <div class="field">
           <label for="ex-instructions">Instructions <span class="opt">optional, one step per line</span></label>
@@ -146,6 +146,10 @@
         <p id="add-exercise-message" class="message" role="alert" aria-live="polite"></p>
         <button id="add-exercise-submit" class="submit" type="submit">Save exercise</button>
       </form>
+
+      <datalist id="category-options"></datalist>
+      <datalist id="equipment-options"></datalist>
+      <datalist id="muscle-options"></datalist>
     </section>
 
     <!-- Active workout: shown when "Start empty workout" is tapped. -->
@@ -333,6 +337,6 @@
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=23"></script>
+  <script src="/app.js?v=24"></script>
 </body>
 </html>
