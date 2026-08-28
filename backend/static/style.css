@@ -258,12 +258,17 @@ body {
 .routine-move:disabled { opacity: 0.35; cursor: default; }
 .routine-menu { font-size: 18px; line-height: 1; }
 
-/* History list rows */
+/* History rows: clickable summary + a ↻ repeat button */
 .history-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.history-row-main {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  width: 100%;
   text-align: left;
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -273,9 +278,33 @@ body {
   cursor: pointer;
   transition: border-color 120ms ease;
 }
-.history-row:hover { border-color: var(--accent); }
+.history-row-main:hover { border-color: var(--accent); }
 .history-row-title { font-size: 15px; font-weight: 700; }
 .history-row-meta { font-size: 12px; color: var(--muted); }
+.history-row-repeat {
+  flex-shrink: 0;
+  width: 44px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--accent);
+  font-size: 20px;
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+.history-row-repeat:hover { border-color: var(--accent); }
+
+/* Recent-workouts block on the home screen */
+.home-history { margin-top: 22px; }
+.home-history-title {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+#home-history-more { width: 100%; }
 
 .ghost {
   margin-top: 14px;

@@ -65,23 +65,31 @@ def _require_active(db: Session, user: User) -> Workout:
     return workout
 
 
-def _content_from_routine(routine: Routine) -> dict:
-    """Turn a routine template into a fresh workout body: every set starts
-    un-done, and each exercise gets an empty notes field."""
-    exercises = []
-    for entry in routine.content.get("exercises", []):
-        exercises.append(
+def _fresh_exercises(source_exercises: list, *, keep_notes: bool) -> dict:
+    """Copy an exercise list into a fresh workout body: weights/reps become
+    targets, every set starts un-done, PR flags are dropped."""
+    out = []
+    for entry in source_exercises or []:
+        out.append(
             {
                 "exercise_id": entry.get("exercise_id"),
                 "name": entry.get("name", ""),
-                "notes": "",
+                "notes": entry.get("notes", "") if keep_notes else "",
                 "sets": [
                     {"weight": s.get("weight"), "reps": s.get("reps"), "done": False}
                     for s in entry.get("sets", [])
                 ],
             }
         )
-    return {"exercises": exercises}
+    return {"exercises": out}
+
+
+def _content_from_routine(routine: Routine) -> dict:
+    return _fresh_exercises(routine.content.get("exercises", []), keep_notes=False)
+
+
+def _content_from_workout(src: Workout) -> dict:
+    return _fresh_exercises((src.content or {}).get("exercises", []), keep_notes=True)
 
 
 @router.post("", response_model=WorkoutPublic, status_code=status.HTTP_201_CREATED)
@@ -91,15 +99,34 @@ def start_workout(
     current_user: User = Depends(get_current_user),
 ):
     """Start a workout. Idempotent: if one is already in progress, return that one
-    instead of creating a second. If `routine_id` is given, the new workout is
-    pre-filled from that routine."""
+    instead of creating a second. `routine_id` pre-fills from a routine template;
+    `from_workout_id` repeats a past workout."""
     existing = _active_workout(db, current_user)
     if existing is not None:
         return existing
 
     routine_id = body.routine_id if body else None
+    from_workout_id = body.from_workout_id if body else None
     content = {"exercises": []}
-    if routine_id is not None:
+
+    if from_workout_id is not None:
+        src = (
+            db.query(Workout)
+            .filter(
+                Workout.id == from_workout_id,
+                Workout.user_id == current_user.id,
+                Workout.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if src is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Workout not found."
+            )
+        content = _content_from_workout(src)
+        if routine_id is None:
+            routine_id = src.routine_id   # carry the routine link so Finish can still sync it
+    elif routine_id is not None:
         routine = (
             db.query(Routine)
             .filter(

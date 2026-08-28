@@ -80,8 +80,10 @@ const routineAddExerciseBtn = document.getElementById("routine-add-exercise");
 const routineSaveBtn = document.getElementById("routine-save");
 const routineDeleteBtn = document.getElementById("routine-delete");
 
-// History sub-views
-const historyBtn = document.getElementById("history-btn");
+// History: a 3-row preview on the home screen + the full sub-view
+const homeHistoryEl = document.getElementById("home-history");
+const homeHistoryListEl = document.getElementById("home-history-list");
+const homeHistoryMoreBtn = document.getElementById("home-history-more");
 const historyView = document.getElementById("history-view");
 const historyBackBtn = document.getElementById("history-back");
 const historyStatusEl = document.getElementById("history-status");
@@ -194,6 +196,7 @@ function showLoggedIn(user) {
   whoEl.textContent = user.display_name;
   loadRoutines();
   loadActiveWorkout();
+  loadHomeHistory();
 }
 
 function showLoggedOut() {
@@ -879,6 +882,7 @@ function endWorkoutUI() {
   home.hidden = false;
   refreshStartButton();
   updateWorkoutFab();
+  loadHomeHistory();   // a just-finished workout should appear in the preview
 }
 
 // --- Routines ----------------------------------------------------------
@@ -1164,7 +1168,7 @@ function routineName(routineId) {
   return r ? r.name : "Workout";
 }
 
-historyBtn.addEventListener("click", openHistory);
+homeHistoryMoreBtn.addEventListener("click", openHistory);
 historyBackBtn.addEventListener("click", () => {
   historyView.hidden = true;
   home.hidden = false;
@@ -1175,6 +1179,54 @@ historyDetailBackBtn.addEventListener("click", () => {
   historyView.hidden = false;
   updateWorkoutFab();
 });
+
+// One history entry: a clickable summary that opens the detail, plus a ↻ button
+// that starts a brand-new workout pre-filled from this one.
+function buildHistoryRow(w) {
+  const row = document.createElement("div");
+  row.className = "history-row";
+
+  const main = document.createElement("button");
+  main.type = "button";
+  main.className = "history-row-main";
+  const title = document.createElement("span");
+  title.className = "history-row-title";
+  title.textContent = routineName(w.routine_id);
+  const meta = document.createElement("span");
+  meta.className = "history-row-meta";
+  meta.textContent =
+    `${fmtDate(w.finished_at || w.started_at)}  ·  ` +
+    `${w.exercise_count} exercise${w.exercise_count === 1 ? "" : "s"}  ·  ` +
+    `${w.set_count} set${w.set_count === 1 ? "" : "s"}  ·  ${fmtVolume(w.volume)}`;
+  main.append(title, meta);
+  main.addEventListener("click", () => openHistoryDetail(w.id));
+
+  const repeat = document.createElement("button");
+  repeat.type = "button";
+  repeat.className = "history-row-repeat";
+  repeat.textContent = "↻";
+  repeat.title = "Do this workout again";
+  repeat.setAttribute("aria-label", "Repeat this workout");
+  repeat.addEventListener("click", () => repeatWorkout(w.id));
+
+  row.append(main, repeat);
+  return row;
+}
+
+// The 3-row preview at the bottom of the home screen.
+async function loadHomeHistory() {
+  try {
+    const res = await authFetch(WORKOUTS_API + "?limit=3");
+    if (!res.ok) { homeHistoryEl.hidden = true; return; }
+    const items = await res.json();
+    homeHistoryListEl.replaceChildren();
+    if (items.length === 0) { homeHistoryEl.hidden = true; return; }
+    for (const w of items) homeHistoryListEl.append(buildHistoryRow(w));
+    homeHistoryEl.hidden = false;
+  } catch (err) {
+    homeHistoryEl.hidden = true;
+  }
+}
 
 function openHistory() {
   home.hidden = true;
@@ -1205,26 +1257,27 @@ function renderHistoryList(items) {
     return;
   }
   historyStatusEl.textContent = `${items.length} workout${items.length === 1 ? "" : "s"}`;
+  for (const w of items) historyListEl.append(buildHistoryRow(w));
+}
 
-  for (const w of items) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "history-row";
-
-    const title = document.createElement("span");
-    title.className = "history-row-title";
-    title.textContent = routineName(w.routine_id);
-
-    const meta = document.createElement("span");
-    meta.className = "history-row-meta";
-    meta.textContent =
-      `${fmtDate(w.finished_at || w.started_at)}  ·  ` +
-      `${w.exercise_count} exercise${w.exercise_count === 1 ? "" : "s"}  ·  ` +
-      `${w.set_count} set${w.set_count === 1 ? "" : "s"}  ·  ${fmtVolume(w.volume)}`;
-
-    btn.append(title, meta);
-    btn.addEventListener("click", () => openHistoryDetail(w.id));
-    historyListEl.append(btn);
+// Start a fresh workout from a past one.
+async function repeatWorkout(workoutId) {
+  if (activeWorkout) {
+    if (!confirm("You have a workout in progress — open that one instead?")) return;
+    openWorkout();
+    return;
+  }
+  try {
+    const res = await authFetch(WORKOUTS_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from_workout_id: workoutId }),
+    });
+    if (!res.ok) return;
+    activeWorkout = await res.json();
+    openWorkout();
+  } catch (err) {
+    /* stay put */
   }
 }
 

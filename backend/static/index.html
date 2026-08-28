@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=8" />
+  <link rel="stylesheet" href="/style.css?v=9" />
 </head>
 <body>
   <main class="card">
@@ -63,8 +63,6 @@
         <button id="exercises" class="action" type="button">Exercises</button>
       </div>
 
-      <button id="history-btn" class="action action--wide" type="button">History</button>
-
       <!-- One button per routine, filled in by app.js. -->
       <div id="routine-list" class="routine-list"></div>
 
@@ -72,6 +70,13 @@
       <p id="routine-empty" class="routine-empty" hidden>
         No routines yet. Create a custom routine to get started.
       </p>
+
+      <!-- The 3 most recent finished workouts, always at the bottom. -->
+      <section id="home-history" class="home-history" hidden>
+        <h3 class="home-history-title">Recent workouts</h3>
+        <div id="home-history-list" class="routine-list"></div>
+        <button id="home-history-more" class="ghost" type="button">Load more history &rarr;</button>
+      </section>
     </section>
 
     <!-- Exercise library: shown when "Exercises" is tapped on the home screen. -->
@@ -201,6 +206,6 @@
     Resume workout <span id="workout-fab-time" class="workout-fab-time"></span>
   </button>
 
-  <script src="/app.js?v=8"></script>
+  <script src="/app.js?v=9"></script>
 </body>
 </html>

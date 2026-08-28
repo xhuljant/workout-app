@@ -112,8 +112,11 @@ class WorkoutUpdate(BaseModel):
 
 
 class WorkoutStart(BaseModel):
-    """Optional body for POST /api/workouts."""
+    """Optional body for POST /api/workouts. At most one of these is set:
+    routine_id pre-fills from a routine template; from_workout_id repeats a past
+    workout."""
     routine_id: uuid.UUID | None = None
+    from_workout_id: uuid.UUID | None = None
 
 
 class WorkoutPublic(BaseModel):
