@@ -696,6 +696,10 @@ async function loadActiveWorkout() {
     activeWorkout = null;
   }
   refreshStartButton();
+
+  // A workout in progress -> jump straight into it (unless the user already
+  // navigated somewhere else while the request was in flight).
+  if (activeWorkout && !home.hidden) openWorkout();
 }
 
 // The single entry point to the active workout. Blue "Start empty workout" when
