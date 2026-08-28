@@ -13,11 +13,12 @@ future offline client can be added without redesigning the database:
                   deleted, so the deletion can sync to other devices.
 """
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     String,
     Integer,
+    Date,
     DateTime,
     Boolean,
     ForeignKey,
@@ -313,4 +314,45 @@ class Folder(Base):
             unique=True,
             postgresql_where=text("is_default AND deleted_at IS NULL"),
         ),
+    )
+
+
+class MeasurementEntry(Base):
+    """One dated set of body measurements, plus an optional progress photo.
+
+    `values` is a {type_key: number} blob in CANONICAL units -- kilograms for
+    mass, centimetres for length, percent as-is. The client converts to/from the
+    user's preferred units for display and entry.
+    """
+
+    __tablename__ = "measurement_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), index=True, nullable=False
+    )
+
+    # The calendar day the measurement is for -- a plain date, no timezone games.
+    measured_on: Mapped[date] = mapped_column(Date, nullable=False)
+
+    # {type_key: number} in canonical units (kg / cm / %).
+    values: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+    # Up to 4 progress photos, each a base64 data URL (downscaled client-side).
+    photos: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )

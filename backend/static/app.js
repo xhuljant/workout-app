@@ -135,6 +135,30 @@ const dayPickerTitleEl = document.getElementById("day-picker-title");
 const dayPickerListEl = document.getElementById("day-picker-list");
 const dayPickerCancelBtn = document.getElementById("day-picker-cancel");
 
+// Measurements sub-view (opened from the ☰ menu)
+const menuMeasurementsBtn = document.getElementById("menu-measurements");
+const measurementsView = document.getElementById("measurements-view");
+const measurementsBackBtn = document.getElementById("measurements-back");
+const measurementsAddBtn = document.getElementById("measurements-add-btn");
+const measurementsChartEl = document.getElementById("measurements-chart");
+const measurementsFilterEl = document.getElementById("measurements-filter");
+const measurementsStatusEl = document.getElementById("measurements-status");
+const measurementsListEl = document.getElementById("measurements-list");
+const measurementEditorView = document.getElementById("measurement-editor-view");
+const measurementEditorBackBtn = document.getElementById("measurement-editor-back");
+const measurementEditBtn = document.getElementById("measurement-editor-edit-btn");
+const measurementEditorTitleEl = document.getElementById("measurement-editor-title");
+const measurementForm = document.getElementById("measurement-form");
+const measurementDateInput = document.getElementById("measurement-date");
+const measurementFieldsEl = document.getElementById("measurement-fields");
+const measurementPhotoInput = document.getElementById("measurement-photo");
+const measurementPhotosEl = document.getElementById("measurement-photos");
+const measurementMsgEl = document.getElementById("measurement-msg");
+const measurementSaveBtn = document.getElementById("measurement-save");
+const measurementDeleteBtn = document.getElementById("measurement-delete");
+const measurementPhotoViewerEl = document.getElementById("measurement-photo-viewer");
+const measurementPhotoViewerImg = document.getElementById("measurement-photo-viewer-img");
+
 // Settings sub-view (+ its Change password / Delete account pages)
 const settingsView = document.getElementById("settings-view");
 const settingsBackBtn = document.getElementById("settings-back");
@@ -143,6 +167,7 @@ const settingsProfileMsg = document.getElementById("settings-profile-msg");
 const setNameInput = document.getElementById("set-name");
 const setEmailInput = document.getElementById("set-email");
 const setRestInput = document.getElementById("set-rest");
+const setUnitsSelect = document.getElementById("set-units");
 const settingsExportBtn = document.getElementById("settings-export");
 const settingsChangePwBtn = document.getElementById("settings-change-password-btn");
 const settingsDeleteAcctBtn = document.getElementById("settings-delete-account-btn");
@@ -259,8 +284,8 @@ async function loadProfile() {
 // showView() so exactly one is ever visible.
 const ALL_VIEWS = [
   home, exercisesView, exerciseCreateView, workoutView, routineView,
-  historyView, historyDetailView, calendarView, settingsView, passwordView,
-  deleteView,
+  historyView, historyDetailView, calendarView, measurementsView,
+  measurementEditorView, settingsView, passwordView, deleteView,
 ];
 
 function showView(el) {
@@ -2478,6 +2503,458 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !dayPickerEl.hidden) closeDayPicker();
 });
 
+// --- Measurements --------------------------------------------------------
+// A line graph of one chosen body measurement, a horizontally-scrollable chip
+// row to switch which one, and a history list. Entries are logged / edited in a
+// modal that also takes an optional (client-downscaled) progress photo. Values
+// are stored canonically (kg / cm / %) and converted to the user's units here.
+const MEASUREMENTS_API = "/api/measurements";
+const MEASUREMENT_TYPES = [
+  { key: "bodyweight",  label: "Bodyweight",  dim: "mass" },
+  { key: "body_fat",    label: "Body fat",    dim: "percent" },
+  { key: "neck",        label: "Neck",        dim: "length" },
+  { key: "shoulders",   label: "Shoulders",   dim: "length" },
+  { key: "chest",       label: "Chest",       dim: "length" },
+  { key: "left_bicep",  label: "Left bicep",  dim: "length" },
+  { key: "right_bicep", label: "Right bicep", dim: "length" },
+  { key: "waist",       label: "Waist",       dim: "length" },
+  { key: "hips",        label: "Hips",        dim: "length" },
+  { key: "left_thigh",  label: "Left thigh",  dim: "length" },
+  { key: "right_thigh", label: "Right thigh", dim: "length" },
+  { key: "left_calf",   label: "Left calf",   dim: "length" },
+  { key: "right_calf",  label: "Right calf",  dim: "length" },
+];
+const MEASUREMENT_TYPE_BY_KEY = Object.fromEntries(
+  MEASUREMENT_TYPES.map((t) => [t.key, t]),
+);
+
+const measurementUnits = () =>
+  currentUser?.preferences?.measurement_units === "metric" ? "metric" : "imperial";
+
+function unitLabel(dim) {
+  const metric = measurementUnits() === "metric";
+  if (dim === "mass") return metric ? "kg" : "lb";
+  if (dim === "length") return metric ? "cm" : "in";
+  return "%";
+}
+// canonical -> display
+function toDisplay(dim, v) {
+  if (v == null) return null;
+  if (measurementUnits() === "metric" || dim === "percent") return v;
+  return dim === "mass" ? v * 2.2046226 : v / 2.54;
+}
+// display -> canonical
+function toCanonical(dim, v) {
+  if (v == null || !Number.isFinite(v)) return null;
+  if (measurementUnits() === "metric" || dim === "percent") return v;
+  return dim === "mass" ? v / 2.2046226 : v * 2.54;
+}
+const fmtMeasureNum = (n) => String(Math.round(n * 10) / 10);
+const todayYmd = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const fmtYmd = (s) =>
+  new Date(s + "T12:00:00").toLocaleDateString(undefined, {
+    year: "numeric", month: "short", day: "numeric",
+  });
+
+const MEASUREMENT_MAX_PHOTOS = 4;
+
+let measurementEntries = [];
+let measurementGraphType = "bodyweight";
+let measurementPhotos = [];        // base64 data URLs, up to MEASUREMENT_MAX_PHOTOS
+let measurementEditId = null;      // id when editing an entry, null when adding
+let measurementEditMode = true;    // false = viewing an existing entry read-only
+
+menuMeasurementsBtn.addEventListener("click", () => { closeSideMenu(); openMeasurements(); });
+measurementsBackBtn.addEventListener("click", () => showView(home));
+measurementsAddBtn.addEventListener("click", () => openMeasurementEditor(null));
+
+async function openMeasurements() {
+  showView(measurementsView);
+  await loadMeasurements();
+}
+
+function measurementCount(typeKey) {
+  return measurementEntries.filter((e) => e.values && e.values[typeKey] != null).length;
+}
+
+async function loadMeasurements() {
+  measurementsStatusEl.textContent = "Loading…";
+  measurementsChartEl.replaceChildren();
+  measurementsFilterEl.replaceChildren();
+  measurementsListEl.replaceChildren();
+  try {
+    const res = await authFetch(MEASUREMENTS_API);
+    if (!res.ok) {
+      measurementsStatusEl.textContent = "Could not load your measurements.";
+      return;
+    }
+    measurementEntries = await res.json();   // newest-first
+    if (measurementCount(measurementGraphType) === 0) {
+      const withData = MEASUREMENT_TYPES.find((t) => measurementCount(t.key) > 0);
+      if (withData) measurementGraphType = withData.key;
+    }
+    renderMeasurements();
+  } catch (err) {
+    measurementsStatusEl.textContent = err.message || "Could not reach the server.";
+  }
+}
+
+function measurementSeries(typeKey) {
+  const t = MEASUREMENT_TYPE_BY_KEY[typeKey];
+  return measurementEntries
+    .filter((e) => e.values && e.values[typeKey] != null)
+    .map((e) => ({
+      date: e.measured_on + "T12:00:00",
+      value: toDisplay(t.dim, e.values[typeKey]),
+    }))
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+function measurementPlaceholder(text) {
+  const p = document.createElement("p");
+  p.className = "measurement-empty";
+  p.textContent = text;
+  return p;
+}
+
+function renderMeasurements() {
+  if (measurementEntries.length === 0) {
+    measurementsStatusEl.textContent = "No measurements yet — tap Add to log your first.";
+    return;
+  }
+  measurementsStatusEl.textContent = "";
+
+  // Graph
+  const type = MEASUREMENT_TYPE_BY_KEY[measurementGraphType];
+  const series = measurementSeries(measurementGraphType);
+  const chart = buildExerciseChart(series, "value", fmtMeasureNum);
+  measurementsChartEl.replaceChildren(
+    chart ||
+      measurementPlaceholder(`Log at least 2 ${type.label.toLowerCase()} entries to see a graph.`),
+  );
+
+  // Filter chips
+  measurementsFilterEl.replaceChildren();
+  let activeChip = null;
+  for (const t of MEASUREMENT_TYPES) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "measurement-chip";
+    chip.textContent = t.label;
+    if (t.key === measurementGraphType) {
+      chip.classList.add("measurement-chip--active");
+      activeChip = chip;
+    }
+    chip.addEventListener("click", () => {
+      measurementGraphType = t.key;
+      renderMeasurements();
+    });
+    measurementsFilterEl.append(chip);
+  }
+  if (activeChip) activeChip.scrollIntoView({ inline: "center", block: "nearest" });
+
+  // History list
+  measurementsListEl.replaceChildren(
+    ...measurementEntries.map(buildMeasurementRow),
+  );
+}
+
+function buildMeasurementRow(entry) {
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "measurement-row";
+
+  const date = document.createElement("span");
+  date.className = "measurement-row-date";
+  date.textContent = fmtYmd(entry.measured_on);
+  row.append(date);
+
+  const parts = [];
+  for (const t of MEASUREMENT_TYPES) {
+    const v = entry.values && entry.values[t.key];
+    if (v == null) continue;
+    parts.push(`${t.label} ${fmtMeasureNum(toDisplay(t.dim, v))} ${unitLabel(t.dim)}`);
+  }
+  const meta = document.createElement("span");
+  meta.className = "measurement-row-meta";
+  if (parts.length === 0) {
+    meta.textContent = "No values";
+  } else {
+    meta.textContent = parts.slice(0, 3).join("  ·  ") +
+      (parts.length > 3 ? `  ·  +${parts.length - 3} more` : "");
+  }
+  row.append(meta);
+
+  if (entry.photo_count > 0) {
+    const cam = document.createElement("span");
+    cam.className = "measurement-row-cam";
+    cam.textContent = `📷 ${entry.photo_count}`;
+    row.append(cam);
+  }
+
+  row.addEventListener("click", () => openMeasurementEditor(entry.id));
+  return row;
+}
+
+// --- Add / edit screen ---
+function buildMeasurementFieldRows(values) {
+  measurementFieldsEl.replaceChildren();
+  for (const t of MEASUREMENT_TYPES) {
+    const rowEl = document.createElement("div");
+    rowEl.className = "measurement-field-row";
+
+    const label = document.createElement("label");
+    label.textContent = `${t.label} (${unitLabel(t.dim)})`;
+    label.htmlFor = `mfield-${t.key}`;
+
+    const input = document.createElement("input");
+    input.id = `mfield-${t.key}`;
+    input.type = "number";
+    input.inputMode = "decimal";
+    input.step = "0.1";
+    input.className = "measurement-input";
+    input.dataset.key = t.key;
+    input.dataset.dim = t.dim;
+    input.disabled = !measurementEditMode;
+    const v = values && values[t.key];
+    input.value = v != null ? fmtMeasureNum(toDisplay(t.dim, v)) : "";
+
+    rowEl.append(label, input);
+    measurementFieldsEl.append(rowEl);
+  }
+}
+
+// Render the photo thumbnails; show remove buttons + the file picker only while editing.
+function renderMeasurementPhotos() {
+  measurementPhotosEl.replaceChildren();
+  measurementPhotos.forEach((src, i) => {
+    const thumb = document.createElement("button");
+    thumb.type = "button";
+    thumb.className = "measurement-photo-thumb";
+
+    const img = document.createElement("img");
+    img.src = src;
+    img.alt = `Progress photo ${i + 1}`;
+    thumb.append(img);
+    thumb.addEventListener("click", () => openPhotoViewer(src));
+
+    if (measurementEditMode) {
+      const rm = document.createElement("button");
+      rm.type = "button";
+      rm.className = "measurement-photo-remove";
+      rm.textContent = "✕";
+      rm.setAttribute("aria-label", "Remove photo");
+      rm.addEventListener("click", (e) => {
+        e.stopPropagation();
+        measurementPhotos.splice(i, 1);
+        renderMeasurementPhotos();
+      });
+      thumb.append(rm);
+    }
+    measurementPhotosEl.append(thumb);
+  });
+  measurementPhotoInput.hidden =
+    !measurementEditMode || measurementPhotos.length >= MEASUREMENT_MAX_PHOTOS;
+}
+
+// Flip the whole screen between read-only and editable.
+function applyMeasurementEditMode(on) {
+  measurementEditMode = on;
+  measurementDateInput.disabled = !on;
+  for (const i of measurementFieldsEl.querySelectorAll(".measurement-input")) {
+    i.disabled = !on;
+  }
+  measurementSaveBtn.hidden = !on;
+  measurementDeleteBtn.hidden = !on || !measurementEditId;
+  measurementEditBtn.hidden = on || !measurementEditId;
+  measurementEditorTitleEl.textContent = !measurementEditId
+    ? "Add measurements"
+    : on ? "Edit measurements" : "Measurements";
+  renderMeasurementPhotos();
+}
+
+async function openMeasurementEditor(id) {
+  measurementEditId = id || null;
+  measurementPhotos = [];
+  measurementPhotoInput.value = "";
+  measurementMsgEl.textContent = "";
+  measurementMsgEl.dataset.kind = "error";
+
+  if (measurementEditId) {
+    // Open an existing entry read-only; the Edit button unlocks it.
+    measurementEditMode = false;
+    buildMeasurementFieldRows(null);
+    applyMeasurementEditMode(false);
+    showView(measurementEditorView);
+    try {
+      const res = await authFetch(MEASUREMENTS_API + "/" + measurementEditId);
+      if (!res.ok) {
+        measurementMsgEl.textContent = "Could not load that entry.";
+        return;
+      }
+      const entry = await res.json();
+      measurementDateInput.value = entry.measured_on;
+      buildMeasurementFieldRows(entry.values || {});
+      measurementPhotos = Array.isArray(entry.photos) ? entry.photos.slice() : [];
+      applyMeasurementEditMode(false);
+    } catch (err) {
+      measurementMsgEl.textContent = err.message || "Could not reach the server.";
+    }
+  } else {
+    // A brand-new entry is editable straight away.
+    measurementEditMode = true;
+    measurementDateInput.value = todayYmd();
+    buildMeasurementFieldRows(null);
+    applyMeasurementEditMode(true);
+    showView(measurementEditorView);
+  }
+}
+
+function closeMeasurementEditor() {
+  showView(measurementsView);
+}
+
+// --- Full-size photo viewer ---
+function openPhotoViewer(src) {
+  measurementPhotoViewerImg.src = src;
+  measurementPhotoViewerEl.hidden = false;
+}
+function closePhotoViewer() {
+  measurementPhotoViewerEl.hidden = true;
+  measurementPhotoViewerImg.removeAttribute("src");
+}
+measurementPhotoViewerEl.addEventListener("click", closePhotoViewer);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !measurementPhotoViewerEl.hidden) closePhotoViewer();
+});
+
+// Shrink an image to fit within maxDim and re-encode as JPEG, returning a data URL.
+function downscaleImage(file, maxDim, quality) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let w = img.naturalWidth || img.width;
+      let h = img.naturalHeight || img.height;
+      const scale = Math.min(1, maxDim / Math.max(w, h));
+      w = Math.max(1, Math.round(w * scale));
+      h = Math.max(1, Math.round(h * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Could not read that image."));
+    };
+    img.src = url;
+  });
+}
+
+measurementPhotoInput.addEventListener("change", async () => {
+  const files = [...(measurementPhotoInput.files || [])];
+  measurementPhotoInput.value = "";
+  if (files.length === 0) return;
+
+  const room = MEASUREMENT_MAX_PHOTOS - measurementPhotos.length;
+  if (room <= 0) {
+    measurementMsgEl.textContent = `Up to ${MEASUREMENT_MAX_PHOTOS} photos per entry.`;
+    return;
+  }
+  measurementMsgEl.textContent = "";
+  for (const file of files.slice(0, room)) {
+    try {
+      measurementPhotos.push(await downscaleImage(file, 1024, 0.7));
+    } catch (err) {
+      measurementMsgEl.textContent = err.message || "Could not read that image.";
+    }
+  }
+  if (files.length > room) {
+    measurementMsgEl.textContent = `Only ${MEASUREMENT_MAX_PHOTOS} photos per entry — extras were skipped.`;
+  }
+  renderMeasurementPhotos();
+});
+
+measurementEditBtn.addEventListener("click", () => applyMeasurementEditMode(true));
+
+measurementForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  measurementMsgEl.textContent = "";
+  measurementMsgEl.dataset.kind = "error";
+
+  if (!measurementDateInput.value) {
+    measurementMsgEl.textContent = "Pick a date.";
+    return;
+  }
+
+  const values = {};
+  for (const input of measurementFieldsEl.querySelectorAll(".measurement-input")) {
+    const raw = input.value.trim();
+    if (raw === "") continue;
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n)) continue;
+    values[input.dataset.key] = toCanonical(input.dataset.dim, n);
+  }
+
+  if (Object.keys(values).length === 0 && measurementPhotos.length === 0) {
+    measurementMsgEl.textContent = "Enter at least one measurement or a photo.";
+    return;
+  }
+
+  const payload = {
+    measured_on: measurementDateInput.value,
+    values,
+    photos: measurementPhotos,
+  };
+
+  measurementSaveBtn.disabled = true;
+  try {
+    const res = await authFetch(
+      MEASUREMENTS_API + (measurementEditId ? "/" + measurementEditId : ""),
+      {
+        method: measurementEditId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      measurementMsgEl.textContent = detailToText(data.detail) || "Could not save.";
+      return;
+    }
+    closeMeasurementEditor();
+    await loadMeasurements();
+  } catch (err) {
+    measurementMsgEl.textContent = err.message || "Could not reach the server.";
+  } finally {
+    measurementSaveBtn.disabled = false;
+  }
+});
+
+measurementDeleteBtn.addEventListener("click", async () => {
+  if (!measurementEditId) return;
+  if (!confirm("Delete this measurement entry?")) return;
+  measurementDeleteBtn.disabled = true;
+  try {
+    const res = await authFetch(MEASUREMENTS_API + "/" + measurementEditId, { method: "DELETE" });
+    if (res.status !== 204 && res.status !== 404) return;
+    closeMeasurementEditor();
+    await loadMeasurements();
+  } catch (err) {
+    /* stay put */
+  } finally {
+    measurementDeleteBtn.disabled = false;
+  }
+});
+
+measurementEditorBackBtn.addEventListener("click", closeMeasurementEditor);
+
 // Read-only render of a workout's content -- used by History detail.
 function renderWorkoutReadonly(container, content) {
   container.replaceChildren();
@@ -2572,6 +3049,7 @@ function openSettings() {
   setNameInput.value = currentUser?.display_name || "";
   setEmailInput.value = currentUser?.email || "";
   setRestInput.value = currentUser?.preferences?.default_rest_seconds ?? 90;
+  setUnitsSelect.value = currentUser?.preferences?.measurement_units === "metric" ? "metric" : "imperial";
   settingsProfileMsg.textContent = "";
 }
 
@@ -2604,7 +3082,10 @@ settingsProfileForm.addEventListener("submit", async (event) => {
   const payload = {
     display_name: setNameInput.value.trim(),
     email: setEmailInput.value.trim(),
-    preferences: { default_rest_seconds: rest },
+    preferences: {
+      default_rest_seconds: rest,
+      measurement_units: setUnitsSelect.value === "metric" ? "metric" : "imperial",
+    },
   };
   try {
     const res = await authFetch(API + "/me", {

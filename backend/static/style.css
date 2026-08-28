@@ -1208,6 +1208,165 @@ button.calendar-day { margin: 0; appearance: none; cursor: pointer; }
 .day-picker-time { color: var(--muted); font-weight: 500; font-size: 12px; }
 .day-picker-box .ghost { margin-top: 0; }
 
+/* --- Measurements page --- */
+.measurements-chart { min-height: 130px; margin-bottom: 10px; }
+.measurement-empty { margin: 0; padding: 40px 8px; text-align: center; color: var(--muted); font-size: 13px; }
+
+/* Horizontally-scrollable filter chips under the graph */
+.measurements-filter {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  margin-bottom: 12px;
+  scrollbar-width: none;
+}
+.measurements-filter::-webkit-scrollbar { display: none; }
+.measurement-chip {
+  flex: 0 0 auto;
+  padding: 7px 13px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+.measurement-chip:hover { border-color: var(--accent); }
+.measurement-chip--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* History rows -- same card look as .history-row-main */
+.measurement-row {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+.measurement-row:hover { border-color: var(--accent); }
+.measurement-row-date { font-size: 15px; font-weight: 700; }
+.measurement-row-meta { font-size: 12px; color: var(--muted); }
+.measurement-row-cam { font-size: 11px; color: var(--accent); }
+
+/* Add / edit screen (#measurement-editor-view) */
+/* iOS Safari sizes a bare <input type=date> to its content and ignores width,
+   pushing it past the card edge -- drop the native appearance so it behaves. */
+#measurement-editor-view input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  max-width: 100%;
+  min-width: 0;
+}
+.measurement-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.measurement-field-row { display: flex; align-items: center; gap: 10px; }
+.measurement-field-row label {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.measurement-input {
+  width: 108px;
+  padding: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 16px;
+  font-family: inherit;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.measurement-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.25);
+}
+#measurement-editor-view input:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Progress-photo thumbnails */
+.measurement-photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.measurement-photos:empty { margin-bottom: 0; }
+.measurement-photo-thumb {
+  position: relative;
+  width: 74px;
+  height: 74px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  padding: 0;
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.measurement-photo-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.measurement-photo-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 12px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+/* Full-size photo overlay */
+.measurement-photo-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 1360;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.9);
+}
+.measurement-photo-viewer img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 8px;
+}
+
+#measurement-editor-view .submit { margin-top: 4px; }
+.measurement-delete { margin-top: 10px; width: 100%; color: var(--error); }
+.measurement-delete:hover { border-color: var(--error); }
+
 /* Keep the workout's Finish button scrollable clear of the rest bar */
 #workout-view.has-rest-timer { padding-bottom: 96px; }
 

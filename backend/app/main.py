@@ -17,7 +17,7 @@ from sqlalchemy import text
 
 from .database import Base, engine, SessionLocal
 from . import models  # noqa: F401  -- importing this registers our tables on Base
-from .routers import auth, exercises, workouts, routines, folders
+from .routers import auth, exercises, workouts, routines, folders, measurements
 from .seed import seed_exercises
 
 
@@ -37,6 +37,25 @@ async def lifespan(app: FastAPI):
 
         # One-time fixup: emails are now stored lower-cased.
         db.execute(text("UPDATE users SET email = lower(email) WHERE email <> lower(email)"))
+
+        # One-time fixup: measurement entries went from a single `photo` column to
+        # a `photos` JSONB array (up to 4 progress photos per entry).
+        db.execute(text("""
+            DO $$
+            BEGIN
+              IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'measurement_entries' AND column_name = 'photo'
+              ) THEN
+                ALTER TABLE measurement_entries
+                  ADD COLUMN IF NOT EXISTS photos jsonb NOT NULL DEFAULT '[]'::jsonb;
+                UPDATE measurement_entries
+                  SET photos = jsonb_build_array(photo)
+                  WHERE photo IS NOT NULL AND photos = '[]'::jsonb;
+                ALTER TABLE measurement_entries DROP COLUMN photo;
+              END IF;
+            END $$;
+        """))
         db.commit()
 
     yield
@@ -52,6 +71,7 @@ app.include_router(exercises.router)
 app.include_router(workouts.router)
 app.include_router(routines.router)
 app.include_router(folders.router)
+app.include_router(measurements.router)
 
 # Serve the login page and its CSS/JS. html=True makes a request to "/" return
 # index.html. This mount is added LAST, so it only handles paths the API didn't.

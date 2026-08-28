@@ -8,7 +8,7 @@ Keeping schemas separate from the database models is a deliberate safety habit:
 the API physically cannot return a field (like password_hash) unless we list it here.
 """
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator
 
@@ -181,6 +181,38 @@ class WorkoutCalendarEntry(BaseModel):
     id: uuid.UUID
     at: datetime            # finished_at, or started_at if never finished
     name: str               # routine name; "" for ad-hoc (routine-less) workouts
+
+
+class MeasurementCreate(BaseModel):
+    """Body for POST /api/measurements and PUT /api/measurements/{id}.
+
+    `values` are in canonical units (kg / cm / %). PUT sends the full desired
+    state, including `photos` -- the complete list of progress photos to keep
+    (up to 4), each a base64 data URL.
+    """
+    measured_on: date
+    values: dict[str, float] = Field(default_factory=dict)
+    photos: list[str] = Field(default_factory=list, max_length=4)
+
+
+MeasurementUpdate = MeasurementCreate
+
+
+class MeasurementListItem(BaseModel):
+    """A measurement entry as it appears in the history list / graph feed --
+    everything except the (potentially large) photo blobs."""
+    id: uuid.UUID
+    measured_on: date
+    values: dict[str, float]
+    photo_count: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MeasurementPublic(MeasurementListItem):
+    """A single entry in full, including its progress photos."""
+    photos: list[str]
 
 
 class ExercisePrevious(BaseModel):
