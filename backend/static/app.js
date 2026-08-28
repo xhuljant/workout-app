@@ -185,15 +185,21 @@ async function loadProfile() {
   }
 }
 
-const SUBVIEWS = () => [
-  exercisesView, workoutView, routineView, historyView, historyDetailView,
+// The mutually-exclusive top-level screens. Every navigation goes through
+// showView() so exactly one is ever visible.
+const ALL_VIEWS = [
+  home, exercisesView, workoutView, routineView, historyView, historyDetailView,
 ];
+
+function showView(el) {
+  for (const v of ALL_VIEWS) v.hidden = v !== el;
+  updateWorkoutFab();
+}
 
 function showLoggedIn(user) {
   form.hidden = true;
   tabsEl.hidden = true;
-  for (const v of SUBVIEWS()) v.hidden = true;   // always land on the home screen
-  home.hidden = false;
+  showView(home);
   whoEl.textContent = user.display_name;
   loadRoutines();
   loadActiveWorkout();
@@ -203,8 +209,7 @@ function showLoggedIn(user) {
 function showLoggedOut() {
   form.hidden = false;
   tabsEl.hidden = false;
-  home.hidden = true;
-  for (const v of SUBVIEWS()) v.hidden = true;
+  for (const v of ALL_VIEWS) v.hidden = true;
   stopDurationTimer();
   activeWorkout = null;
   updateWorkoutFab();
@@ -316,19 +321,15 @@ function openExercises({ onPick = null, returnTo = home } = {}) {
   exercisePickHandler = onPick;
   exercisesReturnTo = returnTo;
   exerciseSearch.value = "";        // always start a fresh search
-  home.hidden = true;
-  workoutView.hidden = true;
-  routineView.hidden = true;
-  exercisesView.hidden = false;
+  showView(exercisesView);
   loadExercises("");
 }
 
 function closeExercises() {
-  exercisesView.hidden = true;
-  exercisesReturnTo.hidden = false;
+  const back = exercisesReturnTo;
   exercisePickHandler = null;
   exercisesReturnTo = home;
-  updateWorkoutFab();
+  showView(back);
 }
 
 exercisesBtn.addEventListener("click", () => openExercises());
@@ -611,13 +612,9 @@ function openWorkout() {
   // Neutralise any half-open picker / routine editor we may be jumping over.
   exercisePickHandler = null;
   editingRoutine = null;
-  home.hidden = true;
-  exercisesView.hidden = true;
-  routineView.hidden = true;
-  workoutView.hidden = false;
+  showView(workoutView);
   renderWorkout();
   startDurationTimer();
-  updateWorkoutFab();
   loadPreviousForWorkout();   // fills the PREVIOUS column + autofills, then re-renders
 }
 
@@ -625,10 +622,8 @@ function openWorkout() {
 // The duration timer keeps running so the floating button's label stays live.
 function closeWorkout() {
   flushWorkoutSave();
-  workoutView.hidden = true;
-  home.hidden = false;
   refreshStartButton();
-  updateWorkoutFab();
+  showView(home);
 }
 workoutBack.addEventListener("click", closeWorkout);
 
@@ -988,10 +983,8 @@ function endWorkoutUI() {
   clearTimeout(workoutSaveTimer);
   workoutSaveTimer = null;
   stopDurationTimer();
-  workoutView.hidden = true;
-  home.hidden = false;
   refreshStartButton();
-  updateWorkoutFab();
+  showView(home);
   loadHomeHistory();   // a just-finished workout should appear in the preview
 }
 
@@ -1070,18 +1063,13 @@ function openRoutineEditor(routine) {
   routineNameInput.value = editingRoutine.name;
   routineDeleteBtn.hidden = !routine;
 
-  home.hidden = true;
-  workoutView.hidden = true;
-  exercisesView.hidden = true;
-  routineView.hidden = false;
+  showView(routineView);
   renderRoutineEditor();
 }
 
 function closeRoutineEditor() {
   editingRoutine = null;
-  routineView.hidden = true;
-  home.hidden = false;
-  updateWorkoutFab();
+  showView(home);
 }
 
 function deepCopy(obj) {
@@ -1278,17 +1266,12 @@ function routineName(routineId) {
   return r ? r.name : "Workout";
 }
 
+// Where the history detail was opened from, so its back button returns there.
+let historyDetailFrom = home;
+
 homeHistoryMoreBtn.addEventListener("click", openHistory);
-historyBackBtn.addEventListener("click", () => {
-  historyView.hidden = true;
-  home.hidden = false;
-  updateWorkoutFab();
-});
-historyDetailBackBtn.addEventListener("click", () => {
-  historyDetailView.hidden = true;
-  historyView.hidden = false;
-  updateWorkoutFab();
-});
+historyBackBtn.addEventListener("click", () => showView(home));
+historyDetailBackBtn.addEventListener("click", () => showView(historyDetailFrom));
 
 // One history entry: a clickable summary that opens the detail, plus a ↻ button
 // that starts a brand-new workout pre-filled from this one.
@@ -1339,9 +1322,7 @@ async function loadHomeHistory() {
 }
 
 function openHistory() {
-  home.hidden = true;
-  historyDetailView.hidden = true;
-  historyView.hidden = false;
+  showView(historyView);
   loadHistory();
 }
 
@@ -1392,8 +1373,9 @@ async function repeatWorkout(workoutId) {
 }
 
 async function openHistoryDetail(id) {
-  historyView.hidden = true;
-  historyDetailView.hidden = false;
+  // Remember the origin (home "Recent workouts" row vs the full History list).
+  historyDetailFrom = historyView.hidden ? home : historyView;
+  showView(historyDetailView);
   historyDetailMetaEl.textContent = "Loading…";
   historyDetailExercisesEl.replaceChildren();
   try {
