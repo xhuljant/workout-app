@@ -50,9 +50,13 @@ const exercisesBtn = document.getElementById("exercises");
 const exercisesView = document.getElementById("exercises-view");
 const exercisesBack = document.getElementById("exercises-back");
 const exerciseSearch = document.getElementById("exercise-search");
+const filterEquipmentSel = document.getElementById("filter-equipment");
+const filterMuscleSel = document.getElementById("filter-muscle");
 const exerciseStatus = document.getElementById("exercise-status");
 const exerciseListEl = document.getElementById("exercise-list");
-const addExerciseDetails = document.getElementById("add-exercise");
+const exerciseAddBtn = document.getElementById("exercise-add-btn");
+const exerciseCreateView = document.getElementById("exercise-create-view");
+const exerciseCreateBackBtn = document.getElementById("exercise-create-back");
 const addExerciseForm = document.getElementById("add-exercise-form");
 const addExerciseMessage = document.getElementById("add-exercise-message");
 const addExerciseSubmit = document.getElementById("add-exercise-submit");
@@ -240,8 +244,8 @@ async function loadProfile() {
 // The mutually-exclusive top-level screens. Every navigation goes through
 // showView() so exactly one is ever visible.
 const ALL_VIEWS = [
-  home, exercisesView, workoutView, routineView, historyView, historyDetailView,
-  settingsView, passwordView, deleteView,
+  home, exercisesView, exerciseCreateView, workoutView, routineView,
+  historyView, historyDetailView, settingsView, passwordView, deleteView,
 ];
 
 function showView(el) {
@@ -453,8 +457,12 @@ function openExercises({ onPick = null, returnTo = home } = {}) {
   exercisePickHandler = onPick;
   exercisesReturnTo = returnTo;
   exerciseSearch.value = "";        // always start a fresh search
+  filterEquipmentSel.value = "";
+  filterMuscleSel.value = "";
+  filterEquipmentSel.classList.remove("is-active");
+  filterMuscleSel.classList.remove("is-active");
   showView(exercisesView);
-  loadExercises("");
+  loadExercises();
 }
 
 function closeExercises() {
@@ -467,32 +475,82 @@ function closeExercises() {
 exercisesBtn.addEventListener("click", () => openExercises());
 exercisesBack.addEventListener("click", closeExercises);
 
-// Load the library (optionally filtered) and render it.
-async function loadExercises(query = "") {
+exerciseAddBtn.addEventListener("click", () => {
+  addExerciseForm.reset();
+  addExerciseMessage.textContent = "";
+  showView(exerciseCreateView);
+  document.getElementById("ex-name").focus();
+});
+exerciseCreateBackBtn.addEventListener("click", () => showView(exercisesView));
+
+// The whole library, loaded once; search + filters run client-side over it.
+let allExercises = [];
+
+async function loadExercises() {
   exerciseStatus.textContent = "Loading…";
   exerciseListEl.replaceChildren();
   try {
-    const url = query
-      ? `${EXERCISES_API}?q=${encodeURIComponent(query)}`
-      : EXERCISES_API;
-    const res = await authFetch(url);
+    const res = await authFetch(EXERCISES_API);
     if (!res.ok) {
       exerciseStatus.textContent = "Could not load exercises.";
       return;
     }
-    const items = await res.json();
-    renderExercises(items, query);
+    allExercises = await res.json();
+    populateExerciseFilters();
+    applyExerciseFilters();
   } catch (err) {
     exerciseStatus.textContent = err.message || "Could not reach the server.";
   }
 }
 
-function renderExercises(items, query) {
+// Rebuild the equipment / body-part dropdowns from the loaded library.
+function populateExerciseFilters() {
+  const equip = new Set();
+  const muscles = new Set();
+  for (const ex of allExercises) {
+    if (ex.equipment) equip.add(ex.equipment);
+    for (const m of ex.primary_muscles || []) muscles.add(m);
+  }
+  fillOptions(filterEquipmentSel, "All equipment", [...equip].sort());
+  fillOptions(filterMuscleSel, "All body parts", [...muscles].sort());
+}
+
+function fillOptions(sel, allLabel, values) {
+  const keep = sel.value;
+  sel.replaceChildren();
+  const first = document.createElement("option");
+  first.value = "";
+  first.textContent = allLabel;
+  sel.append(first);
+  for (const v of values) {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = v.replace(/\b\w/g, (c) => c.toUpperCase());
+    sel.append(opt);
+  }
+  sel.value = values.includes(keep) ? keep : "";
+  sel.classList.toggle("is-active", Boolean(sel.value));
+}
+
+function applyExerciseFilters() {
+  const q = exerciseSearch.value.trim().toLowerCase();
+  const eq = filterEquipmentSel.value;
+  const mu = filterMuscleSel.value;
+  const filtered = allExercises.filter((ex) => {
+    if (q && !ex.name.toLowerCase().includes(q)) return false;
+    if (eq && ex.equipment !== eq) return false;
+    if (mu && !(ex.primary_muscles || []).includes(mu)) return false;
+    return true;
+  });
+  renderExercises(filtered, Boolean(q || eq || mu));
+}
+
+function renderExercises(items, isFiltered) {
   exerciseListEl.replaceChildren();
 
   if (items.length === 0) {
-    exerciseStatus.textContent = query
-      ? `No exercises match “${query}”.`
+    exerciseStatus.textContent = isFiltered
+      ? "No exercises match."
       : "No exercises yet.";
     return;
   }
@@ -729,11 +787,15 @@ function buildExerciseChart(sessions) {
   return wrap;
 }
 
-// Debounce the search box so we don't fire a request on every keystroke.
-let searchTimer;
-exerciseSearch.addEventListener("input", () => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => loadExercises(exerciseSearch.value.trim()), 250);
+// Search + filters are client-side over the loaded library -- instant, no fetch.
+exerciseSearch.addEventListener("input", applyExerciseFilters);
+filterEquipmentSel.addEventListener("change", () => {
+  filterEquipmentSel.classList.toggle("is-active", Boolean(filterEquipmentSel.value));
+  applyExerciseFilters();
+});
+filterMuscleSel.addEventListener("change", () => {
+  filterMuscleSel.classList.toggle("is-active", Boolean(filterMuscleSel.value));
+  applyExerciseFilters();
 });
 
 // Add a custom exercise, then refresh the list so it (and everyone else) sees it.
@@ -773,9 +835,10 @@ addExerciseForm.addEventListener("submit", async (event) => {
     }
 
     addExerciseForm.reset();
-    addExerciseDetails.open = false;
+    showView(exercisesView);
+    await loadExercises();           // pick up the new exercise + refreshed filters
     exerciseSearch.value = data.name;
-    await loadExercises(data.name);
+    applyExerciseFilters();
   } catch (err) {
     addExerciseMessage.textContent = err.message || "Could not reach the server.";
   } finally {

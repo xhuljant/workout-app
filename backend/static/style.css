@@ -76,6 +76,19 @@ body {
       calc(18px + env(safe-area-inset-bottom))
       calc(16px + env(safe-area-inset-left));
   }
+  /* The visible screen fills the card; its scroll region takes the slack so
+     there's no dead space at the bottom. (Hidden subviews keep display:none
+     from the global [hidden] rule.) */
+  .subview {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  #exercise-list {
+    flex: 1 1 auto;
+    max-height: none;
+  }
 }
 
 /* Brand / wordmark */
@@ -447,8 +460,8 @@ button.settings-section { width: 100%; }
   gap: 12px;
   margin-bottom: 16px;
 }
-.subview-head .ghost { margin-top: 0; }
-.subview-title { margin: 0; font-size: 18px; font-weight: 700; }
+.subview-head .ghost { margin-top: 0; flex-shrink: 0; }
+.subview-title { margin: 0; font-size: 18px; font-weight: 700; flex: 1; }
 
 /* Search box: same look as the auth inputs */
 .search {
@@ -467,6 +480,33 @@ button.settings-section { width: 100%; }
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.25);
 }
+
+/* Equipment / body-part filter dropdowns under the search bar */
+.exercise-filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.exercise-filters select {
+  width: 100%;
+  padding: 11px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 16px;
+  font-family: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+.exercise-filters select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.25);
+}
+.exercise-filters select.is-active { border-color: var(--accent); color: var(--accent); }
 
 .exercise-status {
   margin: 0 0 10px;
