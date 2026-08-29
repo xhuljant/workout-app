@@ -1378,6 +1378,16 @@ function closeWorkout() {
 workoutBack.addEventListener("click", closeWorkout);
 
 // --- Rendering -----------------------------------------------------------
+// Swap the active-workout exercise at index i with its neighbour.
+function moveWorkoutExercise(i, dir) {
+  const arr = activeWorkout.content.exercises;
+  const j = i + dir;
+  if (j < 0 || j >= arr.length) return;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  renderWorkout();
+  scheduleSave();
+}
+
 function renderWorkout() {
   if (!activeWorkout) return;
   ensureContent();
@@ -1393,6 +1403,7 @@ function renderWorkout() {
 }
 
 function buildExerciseBlock(entry, exIndex) {
+  const count = activeWorkout.content.exercises.length;
   const block = document.createElement("div");
   block.className = "workout-exercise";
 
@@ -1413,7 +1424,15 @@ function buildExerciseBlock(entry, exIndex) {
     scheduleSave();
   });
 
-  head.append(name, removeEx);
+  const controls = document.createElement("div");
+  controls.className = "workout-exercise-controls";
+  controls.append(
+    moveBtn(-1, exIndex === 0, () => moveWorkoutExercise(exIndex, -1)),
+    moveBtn(1, exIndex === count - 1, () => moveWorkoutExercise(exIndex, 1)),
+    removeEx,
+  );
+
+  head.append(name, controls);
   block.append(head);
 
   const notes = document.createElement("textarea");
@@ -2075,8 +2094,23 @@ workoutFinishBtn.addEventListener("click", async () => {
   }
 });
 
-// If this workout came from a routine, offer to fold the (possibly changed)
-// exercise list back into that routine.
+// True when the workout's exercise makeup differs from the routine's template:
+// exercises added / removed / reordered, or a changed set count / tracking mode.
+// The weights & reps logged this session don't count -- only structure.
+function routineStructureChanged(wEx, rEx) {
+  if (wEx.length !== rEx.length) return true;
+  for (let i = 0; i < wEx.length; i++) {
+    const a = wEx[i];
+    const b = rEx[i];
+    if ((a.exercise_id ?? a.name) !== (b.exercise_id ?? b.name)) return true;
+    if (trackingOf(a) !== trackingOf(b)) return true;
+    if ((a.sets || []).length !== (b.sets || []).length) return true;
+  }
+  return false;
+}
+
+// If this workout came from a routine AND its exercise list changed, offer to
+// fold those changes back into the routine for future workouts.
 async function maybeSyncRoutineFromWorkout() {
   const routineId = activeWorkout && activeWorkout.routine_id;
   if (!routineId) return;
@@ -2084,7 +2118,16 @@ async function maybeSyncRoutineFromWorkout() {
   const routine = routines.find((r) => r.id === routineId);
   if (!routine) return;   // routine was deleted meanwhile
 
-  if (!confirm(`Save these changes to routine "${routine.name}"?`)) return;
+  const wEx = activeWorkout.content.exercises || [];
+  const rEx = (routine.content && routine.content.exercises) || [];
+  if (!routineStructureChanged(wEx, rEx)) return;
+
+  const ok = confirm(
+    "You changed the exercises in this workout.\n\n" +
+    `Update the routine "${routine.name}" with these changes for future workouts?\n\n` +
+    "OK — update the routine\nCancel — keep the routine as it was"
+  );
+  if (!ok) return;
 
   const content = {
     exercises: activeWorkout.content.exercises.map((entry) => {

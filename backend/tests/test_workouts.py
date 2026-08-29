@@ -57,6 +57,22 @@ def test_stale_content_version_conflicts(client, headers, a_weight_exercise):
     assert forced.json()["content_version"] == 3
 
 
+def test_active_workout_preserves_exercise_order(client, headers):
+    client.post("/api/workouts", headers=headers)
+    names = ["Squat", "Bench", "Row", "Curl"]
+    content = {"exercises": [
+        {"exercise_id": None, "name": n, "tracking_type": "weight_reps",
+         "notes": "", "sets": [{"weight": 10, "reps": 5, "done": False}]}
+        for n in names
+    ]}
+    r = client.put("/api/workouts/active", headers=headers,
+                   json={"content": content, "content_version": 1})
+    assert r.status_code == 200
+
+    got = client.get("/api/workouts/active", headers=headers).json()
+    assert [e["name"] for e in got["content"]["exercises"]] == names
+
+
 def test_delete_then_restore_from_trash(client, headers):
     w = client.post("/api/workouts", headers=headers).json()
     client.post("/api/workouts/active/finish", headers=headers)
