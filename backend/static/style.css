@@ -41,6 +41,7 @@ body {
   color: var(--text);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;                  /* guard against transient transform overflow */
 }
 
 .card {
@@ -1500,7 +1501,76 @@ button.calendar-day { margin: 0; appearance: none; cursor: pointer; }
 }
 .toast-action:hover { background: var(--accent); color: #fff; }
 
+/* ===================================================================
+   Motion: screen enter, overlay enter/exit, button press feedback
+   =================================================================== */
+
+/* Screen transitions -- .view-enter is added by showView() on the revealed view.
+   translateY (not X) to avoid a horizontal-scroll flash mid-animation. */
+@keyframes viewIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.view-enter { animation: viewIn 170ms ease-out; }
+
+/* Overlays (side menu, rest editor, day picker, photo viewer).
+   openOverlay/closeOverlay toggle .overlay-in / .overlay-out on the backdrop. */
+@keyframes backdropIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes backdropOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes sheetIn  { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: none; } }
+@keyframes sheetOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(0.97); } }
+@keyframes panelIn  { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes panelOut { from { transform: none; } to { transform: translateX(100%); } }
+
+.overlay-in  { animation: backdropIn 140ms ease-out; }
+.overlay-out { animation: backdropOut 160ms ease-in both; }
+
+.rest-editor.overlay-in .rest-editor-box,
+.day-picker.overlay-in .day-picker-box,
+.measurement-photo-viewer.overlay-in img { animation: sheetIn 190ms ease-out; }
+.rest-editor.overlay-out .rest-editor-box,
+.day-picker.overlay-out .day-picker-box,
+.measurement-photo-viewer.overlay-out img { animation: sheetOut 150ms ease-in both; }
+
+.side-menu.overlay-in .side-menu-panel  { animation: panelIn 200ms ease-out; }
+.side-menu.overlay-out .side-menu-panel { animation: panelOut 180ms ease-in both; }
+
+/* Button press feedback. Explicit list so it wins the specificity tie with the
+   per-class :active rules above, and so `transform` is actually transitioned. */
+.submit, .action, .ghost, .btn-dark, .btn-danger, .tab, .brand-menu,
+.routine-name-btn, .routine-move, .routine-menu, .folder-edit-btn,
+.history-row-main, .history-row-repeat, .exercise-pick, .side-menu-item,
+.day-picker-item, .measurement-chip, .rest-adjust, .rest-skip,
+.rest-editor-step, .workout-exercise-fold, .toast-action,
+.set-remove, button.calendar-day {
+  transition: transform 90ms ease, background-color 120ms ease,
+              border-color 120ms ease, color 120ms ease, opacity 120ms ease;
+}
+.submit:active, .action:active, .ghost:active, .btn-dark:active,
+.btn-danger:not(:disabled):active, .tab:active, .brand-menu:active,
+.routine-name-btn:active, .routine-move:not(:disabled):active,
+.routine-menu:active, .folder-edit-btn:not(:disabled):active,
+.history-row-main:active, .history-row-repeat:active, .exercise-pick:active,
+.side-menu-item:active, .day-picker-item:active, .measurement-chip:active,
+.rest-adjust:active, .rest-skip:active,
+.rest-editor-step:not(:disabled):active, .workout-exercise-fold:active,
+.toast-action:active, button.calendar-day:active {
+  transform: scale(0.96);
+}
+
+/* Shared keyboard-focus ring for buttons (inputs already have one). */
+button:focus-visible,
+summary:focus-visible,
+[role="button"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.35);
+}
+
 /* Respect people who prefer reduced motion */
 @media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition: none !important;
+  }
 }

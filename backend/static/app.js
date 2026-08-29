@@ -330,6 +330,40 @@ function showView(el) {
   // Leaving the workout screen only detaches the bar -- the countdown keeps
   // running and re-appears when you come back.
   if (el !== workoutView) hideRestTimer();
+
+  // Play a short enter animation on the screen we just revealed. Removing then
+  // re-adding the class (with a forced reflow between) restarts it on rapid nav.
+  el.classList.remove("view-enter");
+  void el.offsetWidth;
+  el.classList.add("view-enter");
+}
+
+// Fixed-overlay show/hide with an enter + exit animation. The element must be
+// hidden via the `hidden` attribute; CSS animates `.overlay-in` / `.overlay-out`.
+// A per-element token makes a reopen safely cancel an in-flight close.
+function openOverlay(el) {
+  el._ovToken = (el._ovToken || 0) + 1;
+  if (el._ovTimer) { clearTimeout(el._ovTimer); el._ovTimer = null; }
+  el.classList.remove("overlay-out");
+  el.hidden = false;
+  void el.offsetWidth;
+  el.classList.add("overlay-in");
+}
+function closeOverlay(el) {
+  if (el.hidden) return;
+  const token = el._ovToken = (el._ovToken || 0) + 1;
+  el.classList.remove("overlay-in");
+  el.classList.add("overlay-out");
+  const finish = () => {
+    if (el._ovToken !== token) return;   // a reopen superseded this close
+    el.removeEventListener("animationend", onEnd);
+    if (el._ovTimer) { clearTimeout(el._ovTimer); el._ovTimer = null; }
+    el.hidden = true;
+    el.classList.remove("overlay-out");
+  };
+  const onEnd = (e) => { if (e.target === el) finish(); };
+  el.addEventListener("animationend", onEnd);
+  el._ovTimer = setTimeout(finish, 280);   // fallback: reduced motion / missed event
 }
 
 function showLoggedIn(user) {
@@ -1890,7 +1924,7 @@ let restEditorValue = 90;
 function openRestEditor() {
   restEditorValue = workoutRestSeconds();
   renderRestEditor();
-  restEditorEl.hidden = false;
+  openOverlay(restEditorEl);
 }
 function renderRestEditor() {
   restEditorValueEl.textContent = formatDuration(restEditorValue * 1000);
@@ -1905,12 +1939,12 @@ restEditorMinusBtn.addEventListener("click", () => {
   restEditorValue = Math.max(15, restEditorValue - 15);
   renderRestEditor();
 });
-restEditorCancelBtn.addEventListener("click", () => { restEditorEl.hidden = true; });
+restEditorCancelBtn.addEventListener("click", () => closeOverlay(restEditorEl));
 restEditorEl.addEventListener("click", (e) => {
-  if (e.target === restEditorEl) restEditorEl.hidden = true;   // tap the backdrop
+  if (e.target === restEditorEl) closeOverlay(restEditorEl);   // tap the backdrop
 });
 restEditorSaveBtn.addEventListener("click", async () => {
-  restEditorEl.hidden = true;
+  closeOverlay(restEditorEl);
   if (!activeWorkout) return;
   activeWorkout.rest_seconds = restEditorValue;
   renderWorkout();   // refresh every "Rest Timer: ..." label
@@ -3029,11 +3063,11 @@ function openDayPicker(workouts) {
     item.addEventListener("click", () => { closeDayPicker(); openHistoryDetail(w.id); });
     dayPickerListEl.append(item);
   }
-  dayPickerEl.hidden = false;
+  openOverlay(dayPickerEl);
 }
 
 function closeDayPicker() {
-  dayPickerEl.hidden = true;
+  closeOverlay(dayPickerEl);
 }
 
 dayPickerCancelBtn.addEventListener("click", closeDayPicker);
@@ -3361,11 +3395,10 @@ function closeMeasurementEditor() {
 // --- Full-size photo viewer ---
 function openPhotoViewer(src) {
   measurementPhotoViewerImg.src = src;
-  measurementPhotoViewerEl.hidden = false;
+  openOverlay(measurementPhotoViewerEl);
 }
 function closePhotoViewer() {
-  measurementPhotoViewerEl.hidden = true;
-  measurementPhotoViewerImg.removeAttribute("src");
+  closeOverlay(measurementPhotoViewerEl);   // src is replaced on the next open
 }
 measurementPhotoViewerEl.addEventListener("click", closePhotoViewer);
 document.addEventListener("keydown", (e) => {
@@ -3571,11 +3604,11 @@ function renderWorkoutReadonly(container, content) {
 
 // --- Side menu ---------------------------------------------------------------
 function openSideMenu() {
-  sideMenu.hidden = false;
+  openOverlay(sideMenu);
   menuBtn.setAttribute("aria-expanded", "true");
 }
 function closeSideMenu() {
-  sideMenu.hidden = true;
+  closeOverlay(sideMenu);
   menuBtn.setAttribute("aria-expanded", "false");
 }
 menuBtn.addEventListener("click", openSideMenu);
