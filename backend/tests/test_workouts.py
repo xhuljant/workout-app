@@ -73,6 +73,22 @@ def test_active_workout_preserves_exercise_order(client, headers):
     assert [e["name"] for e in got["content"]["exercises"]] == names
 
 
+def test_put_active_ignores_unknown_entry_keys(client, headers):
+    client.post("/api/workouts", headers=headers)
+    content = {"exercises": [{
+        "exercise_id": None, "name": "Bench", "tracking_type": "weight_reps",
+        "notes": "", "done_collapsed": True,          # client-only UI flag
+        "sets": [{"weight": 100, "reps": 5, "done": True}],
+    }]}
+    r = client.put("/api/workouts/active", headers=headers,
+                   json={"content": content, "content_version": 1})
+    assert r.status_code == 200
+
+    entry = client.get("/api/workouts/active", headers=headers).json()["content"]["exercises"][0]
+    assert "done_collapsed" not in entry
+    assert entry["name"] == "Bench"
+
+
 def test_delete_then_restore_from_trash(client, headers):
     w = client.post("/api/workouts", headers=headers).json()
     client.post("/api/workouts/active/finish", headers=headers)

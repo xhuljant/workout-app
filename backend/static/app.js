@@ -58,6 +58,8 @@ const filterMuscleSel = document.getElementById("filter-muscle");
 const exerciseStatus = document.getElementById("exercise-status");
 const exerciseListEl = document.getElementById("exercise-list");
 const exerciseAddBtn = document.getElementById("exercise-add-btn");
+const exercisePickBar = document.getElementById("exercise-pick-bar");
+const exercisePickAddBtn = document.getElementById("exercise-pick-add");
 const exerciseCreateView = document.getElementById("exercise-create-view");
 const exerciseCreateBackBtn = document.getElementById("exercise-create-back");
 const addExerciseForm = document.getElementById("add-exercise-form");
@@ -446,7 +448,22 @@ function renderFolders() {
         const nameBtn = document.createElement("button");
         nameBtn.type = "button";
         nameBtn.className = "routine-name-btn";
-        nameBtn.textContent = routine.name;
+
+        const rTitle = document.createElement("span");
+        rTitle.className = "routine-name-title";
+        rTitle.textContent = routine.name;
+
+        const rSub = document.createElement("span");
+        rSub.className = "routine-name-sub";
+        const exNames = ((routine.content && routine.content.exercises) || [])
+          .map((e) => e.name)
+          .filter(Boolean);
+        rSub.textContent = exNames.length
+          ? exNames.slice(0, 6).join(" · ") +
+            (exNames.length > 6 ? `  +${exNames.length - 6}` : "")
+          : "No exercises yet";
+
+        nameBtn.append(rTitle, rSub);
         nameBtn.addEventListener("click", () => startRoutine(routine));
         row.append(nameBtn);
 
@@ -559,17 +576,33 @@ async function authFetch(path, options = {}, retried = false) {
 // view to show again when the picker closes.
 let exercisePickHandler = null;
 let exercisesReturnTo = home;
+// While picking: the chosen exercise ids, in tap order. Committed all at once.
+let pickSelectedIds = [];
+
+// Show/refresh the "Add N exercises" bar (visible only in picker mode).
+function updatePickBar() {
+  const picking = !!exercisePickHandler;
+  exercisePickBar.hidden = !picking;
+  const n = pickSelectedIds.length;
+  exercisePickAddBtn.textContent = n
+    ? `Add ${n} exercise${n === 1 ? "" : "s"}`
+    : "Select exercises to add";
+  exercisePickAddBtn.disabled = !n;
+}
 
 // openExercises()                      -> browse the library from the home screen
-// openExercises({ onPick, returnTo })  -> pick an exercise for another view
+// openExercises({ onPick, returnTo })  -> pick exercises for another view.
+//   onPick is called ONCE with an array of the chosen exercise objects.
 function openExercises({ onPick = null, returnTo = home } = {}) {
   exercisePickHandler = onPick;
   exercisesReturnTo = returnTo;
+  pickSelectedIds = [];
   exerciseSearch.value = "";        // always start a fresh search
   filterEquipmentSel.value = "";
   filterMuscleSel.value = "";
   filterEquipmentSel.classList.remove("is-active");
   filterMuscleSel.classList.remove("is-active");
+  updatePickBar();
   showView(exercisesView);
   loadExercises();
 }
@@ -578,8 +611,17 @@ function closeExercises() {
   const back = exercisesReturnTo;
   exercisePickHandler = null;
   exercisesReturnTo = home;
+  pickSelectedIds = [];
+  updatePickBar();
   showView(back);
 }
+
+exercisePickAddBtn.addEventListener("click", () => {
+  if (!exercisePickHandler || !pickSelectedIds.length) return;
+  const byId = new Map(allExercises.map((e) => [e.id, e]));
+  const chosen = pickSelectedIds.map((id) => byId.get(id)).filter(Boolean);
+  exercisePickHandler(chosen);   // handler does the appends + closeExercises + render
+});
 
 exercisesBtn.addEventListener("click", () => openExercises());
 exercisesBack.addEventListener("click", closeExercises);
@@ -771,12 +813,13 @@ function renderExercises(items, isFiltered) {
 
   exerciseStatus.textContent = `${items.length} exercise${items.length === 1 ? "" : "s"}`;
 
-  // Picker mode: each exercise is a button that hands itself to the caller.
+  // Picker mode: rows toggle a selection; the "Add N" bar commits them all.
   if (exercisePickHandler) {
     for (const ex of items) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "exercise-pick";
+      btn.classList.toggle("exercise-pick--selected", pickSelectedIds.includes(ex.id));
 
       const name = document.createElement("span");
       name.className = "exercise-pick-name";
@@ -791,7 +834,18 @@ function renderExercises(items, isFiltered) {
         btn.append(metaEl);
       }
 
-      btn.addEventListener("click", () => exercisePickHandler(ex));
+      const check = document.createElement("span");
+      check.className = "exercise-pick-check";
+      check.textContent = "✓";
+      btn.append(check);
+
+      btn.addEventListener("click", () => {
+        const i = pickSelectedIds.indexOf(ex.id);
+        if (i >= 0) pickSelectedIds.splice(i, 1);
+        else pickSelectedIds.push(ex.id);
+        btn.classList.toggle("exercise-pick--selected", pickSelectedIds.includes(ex.id));
+        updatePickBar();
+      });
       exerciseListEl.append(btn);
     }
     return;
@@ -1251,8 +1305,8 @@ function setsGridCols(mode, { withPrev = true, withDone = true } = {}) {
     "1.7rem",
     ...(withPrev ? ["3.6rem"] : []),
     ...t.fields.map(() => "minmax(0, 1fr)"),
-    ...(withDone ? ["1.8rem"] : []),
-    "1.2rem",
+    ...(withDone ? ["2.75rem"] : []),   // the ✓ cell is a 44px tap target
+    withDone ? "1.6rem" : "1.2rem",     // remove ✕ -- roomier in the live workout
   ].join(" ");
 }
 function anyPr(set) {
@@ -1404,8 +1458,12 @@ function renderWorkout() {
 
 function buildExerciseBlock(entry, exIndex) {
   const count = activeWorkout.content.exercises.length;
+  const allDone = entry.sets.length > 0 && entry.sets.every((s) => s.done);
+  // undefined -> follow allDone; true/false -> the user's explicit choice
+  const collapsed = entry.done_collapsed ?? allDone;
+
   const block = document.createElement("div");
-  block.className = "workout-exercise";
+  block.className = "workout-exercise" + (collapsed ? " workout-exercise--collapsed" : "");
 
   const head = document.createElement("div");
   head.className = "workout-exercise-head";
@@ -1426,14 +1484,42 @@ function buildExerciseBlock(entry, exIndex) {
 
   const controls = document.createElement("div");
   controls.className = "workout-exercise-controls";
-  controls.append(
+  const moves = [
     moveBtn(-1, exIndex === 0, () => moveWorkoutExercise(exIndex, -1)),
     moveBtn(1, exIndex === count - 1, () => moveWorkoutExercise(exIndex, 1)),
-    removeEx,
-  );
+  ];
+  controls.append(...moves, removeEx);
 
   head.append(name, controls);
   block.append(head);
+
+  // Once every set is checked, fold the block to a one-liner so the next
+  // exercise is on screen. Tap the head (not the controls) to reopen.
+  if (collapsed) {
+    const summary = document.createElement("span");
+    summary.className = "workout-exercise-summary";
+    summary.textContent = `✓ ${entry.sets.length} set${entry.sets.length === 1 ? "" : "s"}`;
+    head.insertBefore(summary, controls);
+    head.addEventListener("click", (e) => {
+      if (e.target.closest(".workout-exercise-controls")) return;
+      entry.done_collapsed = false;
+      renderWorkout();
+    });
+    return block;
+  }
+
+  if (allDone) {
+    const fold = document.createElement("button");
+    fold.type = "button";
+    fold.className = "workout-exercise-fold";
+    fold.textContent = "▾";
+    fold.setAttribute("aria-label", "Collapse exercise");
+    fold.addEventListener("click", () => {
+      entry.done_collapsed = true;
+      renderWorkout();
+    });
+    controls.insertBefore(fold, moves[0]);
+  }
 
   const notes = document.createElement("textarea");
   notes.className = "workout-notes";
@@ -1496,7 +1582,8 @@ function buildExerciseBlock(entry, exIndex) {
       return inp;
     });
 
-    const doneWrap = document.createElement("div");
+    // A <label> so tapping anywhere in the (44px) cell toggles the checkbox.
+    const doneWrap = document.createElement("label");
     doneWrap.className = "set-done-wrap";
     const done = document.createElement("input");
     done.type = "checkbox";
@@ -1509,10 +1596,13 @@ function buildExerciseBlock(entry, exIndex) {
         startRestTimer();
       } else {
         set.pr_weight = set.pr_1rm = set.pr_reps = set.pr_time = set.pr_distance = false;
-        num.classList.remove("set-num--pr");
+        entry.done_collapsed = false;   // reopened a set -> keep the block open
       }
-      block.classList.toggle("has-done-sets", entry.sets.some((s) => s.done));
-      updateWorkoutStats();
+      if (entry.sets.length > 0 && entry.sets.every((s) => s.done)
+          && entry.done_collapsed == null) {
+        entry.done_collapsed = true;    // last set checked -> auto-collapse
+      }
+      renderWorkout();                  // reflect collapse / PR badge / stats
       scheduleSave();
     });
     doneWrap.append(done);
@@ -2060,23 +2150,25 @@ window.addEventListener("online", () => {
 
 // --- Add exercise / finish / discard --------------------------------
 workoutAddExerciseBtn.addEventListener("click", () => {
-  openExercises({ onPick: addExerciseToWorkout, returnTo: workoutView });
+  openExercises({ onPick: addExercisesToWorkout, returnTo: workoutView });
 });
 
-function addExerciseToWorkout(ex) {
+function addExercisesToWorkout(list) {
   ensureContent();
-  const mode = TRACKING[ex.tracking_type] ? ex.tracking_type : "weight_reps";
-  activeWorkout.content.exercises.push({
-    exercise_id: ex.id,
-    name: ex.name,
-    tracking_type: mode,
-    notes: "",
-    sets: [emptySetFor(mode, { done: false })],
-  });
+  for (const ex of list) {
+    const mode = TRACKING[ex.tracking_type] ? ex.tracking_type : "weight_reps";
+    activeWorkout.content.exercises.push({
+      exercise_id: ex.id,
+      name: ex.name,
+      tracking_type: mode,
+      notes: "",
+      sets: [emptySetFor(mode, { done: false })],
+    });
+  }
   scheduleSave();
   closeExercises();          // back to the workout view
   renderWorkout();
-  loadPreviousForWorkout();  // pull previous / PR data for the new exercise
+  loadPreviousForWorkout();  // pull previous / PR data for the new exercises
 }
 
 workoutFinishBtn.addEventListener("click", async () => {
@@ -2520,17 +2612,19 @@ function buildRoutineExerciseBlock(entry, exIndex) {
 }
 
 routineAddExerciseBtn.addEventListener("click", () => {
-  openExercises({ onPick: addExerciseToRoutine, returnTo: routineView });
+  openExercises({ onPick: addExercisesToRoutine, returnTo: routineView });
 });
 
-function addExerciseToRoutine(ex) {
-  const mode = TRACKING[ex.tracking_type] ? ex.tracking_type : "weight_reps";
-  editingRoutine.content.exercises.push({
-    exercise_id: ex.id,
-    name: ex.name,
-    tracking_type: mode,
-    sets: [emptySetFor(mode)],
-  });
+function addExercisesToRoutine(list) {
+  for (const ex of list) {
+    const mode = TRACKING[ex.tracking_type] ? ex.tracking_type : "weight_reps";
+    editingRoutine.content.exercises.push({
+      exercise_id: ex.id,
+      name: ex.name,
+      tracking_type: mode,
+      sets: [emptySetFor(mode)],
+    });
+  }
   closeExercises();          // back to the routine editor
   renderRoutineEditor();
 }

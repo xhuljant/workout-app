@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=35" />
+  <link rel="stylesheet" href="/style.css?v=36" />
 </head>
 <body>
   <main class="card">
@@ -114,6 +114,13 @@
 
       <p id="exercise-status" class="exercise-status" aria-live="polite"></p>
       <div id="exercise-list" class="exercise-list"></div>
+
+      <!-- Only shown while picking exercises for a workout / routine. -->
+      <div id="exercise-pick-bar" class="exercise-pick-bar" hidden>
+        <button id="exercise-pick-add" class="submit" type="button" disabled>
+          Select exercises to add
+        </button>
+      </div>
     </section>
 
     <!-- Create / edit a custom exercise (opened from "Add", or "Edit" on a
@@ -191,7 +198,7 @@
         No exercises yet. Add one to start logging sets.
       </p>
 
-      <button id="workout-add-exercise" class="action action--wide" type="button">+ Add Exercise</button>
+      <button id="workout-add-exercise" class="btn-dark" type="button">+ Add Exercise</button>
 
       <div class="workout-actions">
         <button id="workout-finish" class="submit" type="button">Finish</button>
@@ -224,7 +231,7 @@
         No exercises yet. Add one to build the routine.
       </p>
 
-      <button id="routine-add-exercise" class="action action--wide" type="button">+ Add Exercise</button>
+      <button id="routine-add-exercise" class="btn-dark" type="button">+ Add Exercise</button>
 
       <div class="workout-actions">
         <button id="routine-save" class="submit" type="button">Save</button>
@@ -455,6 +462,6 @@
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=35"></script>
+  <script src="/app.js?v=36"></script>
 </body>
 </html>
