@@ -102,16 +102,16 @@ To stop: press `Ctrl-C`, then `docker compose down`.
 
 The database schema is versioned in `backend/alembic/versions/`. On every
 `docker compose up`, the api container runs `alembic upgrade head` before
-starting (see `backend/entrypoint.sh`), so a fresh database is built from the
-migrations and an existing one is brought up to date automatically. Adding a
-column no longer means wiping data.
+starting (it's the first half of the container's command in `backend/Dockerfile`),
+so a fresh database is built from the migrations and an existing one is brought
+up to date automatically. Adding a column no longer means wiping data.
 
 - **Fresh install:** nothing to do — `up` creates everything.
 - **Existing database from before migrations existed:** run this once so Alembic
   records the current schema as the baseline, then let it upgrade:
 
   ```bash
-  docker compose run --rm --entrypoint "" api alembic stamp 0001
+  docker compose run --rm api alembic stamp 0001
   docker compose up --build
   ```
 
@@ -225,8 +225,9 @@ docker compose exec db psql -U workout -d workout -c "select email, display_name
 
 - **Front-end is served by the API** for now, which avoids CORS while we're small.
   When we build the full app UI (a PWA), it will likely become its own service.
-- **Schema changes are Alembic migrations**, applied automatically on startup by
-  `entrypoint.sh`. See "Reliability & operations" above.
+- **Schema changes are Alembic migrations**, applied automatically on startup
+  (the api container runs `alembic upgrade head` before uvicorn). See
+  "Reliability & operations" above.
 - **Tokens live in `localStorage`** for now — convenient and fine on your private
   network. We can harden this (httpOnly refresh cookie) before wider exposure.
 - **Sync-friendly columns** (`updated_at`, `deleted_at`, UUID ids) are on every

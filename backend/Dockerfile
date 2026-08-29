@@ -15,12 +15,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Now copy the rest of the code (the "app" package, "alembic" migrations,
-# "alembic.ini", the "static" folder, and entrypoint.sh).
+# "alembic.ini", and the "static" folder).
 COPY . .
 
-RUN chmod +x /app/entrypoint.sh
-
-# entrypoint.sh runs `alembic upgrade head` (bringing the schema up to date), then
-# execs the CMD below. Schema changes are migrations now -- never `down -v`.
-ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Bring the schema up to date (`alembic upgrade head` is a no-op on an already
+# current database), then start the server. Kept inline -- no entrypoint script --
+# so it can't be broken by Windows CRLF line endings or a missing +x bit.
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]
