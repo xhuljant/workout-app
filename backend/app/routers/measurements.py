@@ -13,7 +13,12 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import MeasurementEntry, User
-from ..schemas import MeasurementCreate, MeasurementListItem, MeasurementPublic
+from ..schemas import (
+    MeasurementCreate,
+    MeasurementListItem,
+    MeasurementPublic,
+    MeasurementTrashItem,
+)
 
 router = APIRouter(prefix="/api/measurements", tags=["measurements"])
 
@@ -63,6 +68,60 @@ def list_measurements(
         )
         for r in rows
     ]
+
+
+@router.get("/trash", response_model=list[MeasurementTrashItem])
+def list_trashed_measurements(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Soft-deleted measurement entries, newest deletion first. Purged after 30 days."""
+    rows = (
+        db.query(MeasurementEntry)
+        .filter(
+            MeasurementEntry.user_id == current_user.id,
+            MeasurementEntry.deleted_at.isnot(None),
+        )
+        .order_by(MeasurementEntry.deleted_at.desc())
+        .all()
+    )
+    return [
+        MeasurementTrashItem(
+            id=r.id,
+            measured_on=r.measured_on,
+            deleted_at=r.deleted_at,
+            value_count=len(r.values or {}),
+            photo_count=len(r.photos or []),
+        )
+        for r in rows
+    ]
+
+
+@router.post("/{entry_id}/restore", response_model=MeasurementPublic)
+def restore_measurement(
+    entry_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Undo a soft-delete while the entry is still in Trash."""
+    entry = (
+        db.query(MeasurementEntry)
+        .filter(
+            MeasurementEntry.id == entry_id,
+            MeasurementEntry.user_id == current_user.id,
+            MeasurementEntry.deleted_at.isnot(None),
+        )
+        .first()
+    )
+    if entry is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Measurement not found in Trash.",
+        )
+    entry.deleted_at = None
+    db.commit()
+    db.refresh(entry)
+    return _to_public(entry)
 
 
 @router.post("", response_model=MeasurementPublic, status_code=status.HTTP_201_CREATED)

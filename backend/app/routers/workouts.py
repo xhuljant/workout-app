@@ -12,6 +12,7 @@ import io
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -25,6 +26,7 @@ from ..schemas import (
     WorkoutSet,
     WorkoutStart,
     WorkoutSummary,
+    WorkoutTrashItem,
     WorkoutUpdate,
 )
 
@@ -304,9 +306,27 @@ def update_active_workout(
     current_user: User = Depends(get_current_user),
 ):
     """Overwrite the active workout's contents (exercises, sets, notes), and the
-    rest-timer length when supplied."""
+    rest-timer length when supplied.
+
+    Optimistic concurrency: if the client sends `content_version` and it no
+    longer matches, another device saved in between -- reject with 409 and hand
+    back the authoritative copy so the client can reconcile instead of silently
+    clobbering those edits.
+    """
     workout = _require_active(db, current_user)
+
+    if body.content_version is not None and body.content_version != workout.content_version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "stale",
+                "message": "This workout was updated on another device.",
+                "server": jsonable_encoder(WorkoutPublic.model_validate(workout)),
+            },
+        )
+
     workout.content = body.content.model_dump(mode="json")
+    workout.content_version = (workout.content_version or 1) + 1
     if body.rest_seconds is not None:
         workout.rest_seconds = body.rest_seconds
     db.commit()
@@ -437,6 +457,70 @@ def _owned_workout(db: Session, user: User, workout_id: uuid.UUID) -> Workout:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Workout not found."
         )
+    return workout
+
+
+@router.get("/trash", response_model=list[WorkoutTrashItem])
+def list_trashed_workouts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Soft-deleted workouts, newest deletion first. Purged after 30 days."""
+    routine_names = {
+        r.id: r.name
+        for r in db.query(Routine).filter(Routine.user_id == current_user.id).all()
+    }
+    rows = (
+        db.query(Workout)
+        .filter(
+            Workout.user_id == current_user.id,
+            Workout.deleted_at.isnot(None),
+        )
+        .order_by(Workout.deleted_at.desc())
+        .all()
+    )
+    return [
+        WorkoutTrashItem(
+            id=w.id,
+            name=routine_names.get(w.routine_id, "Workout"),
+            at=w.finished_at or w.started_at,
+            deleted_at=w.deleted_at,
+            exercise_count=len((w.content or {}).get("exercises", [])),
+        )
+        for w in rows
+    ]
+
+
+@router.post("/{workout_id}/restore", response_model=WorkoutPublic)
+def restore_workout(
+    workout_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Undo a soft-delete. Only works while the workout is still in Trash (not
+    yet purged) and there isn't already an active workout blocking an active one."""
+    workout = (
+        db.query(Workout)
+        .filter(
+            Workout.id == workout_id,
+            Workout.user_id == current_user.id,
+            Workout.deleted_at.isnot(None),
+        )
+        .first()
+    )
+    if workout is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workout not found in Trash.",
+        )
+    if workout.status == "active" and _active_workout(db, current_user) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Finish or discard your current workout before restoring this one.",
+        )
+    workout.deleted_at = None
+    db.commit()
+    db.refresh(workout)
     return workout
 
 

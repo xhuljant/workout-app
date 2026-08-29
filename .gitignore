@@ -6,6 +6,10 @@ __pycache__/
 venv/
 .DS_Store
 
+# Database backups written by the db-backup service / `make backup`.
+backups/
+.pytest_cache/
+
 # macOS
 .DS_Store
 .AppleDouble

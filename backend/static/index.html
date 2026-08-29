@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=32" />
+  <link rel="stylesheet" href="/style.css?v=33" />
 </head>
 <body>
   <main class="card">
@@ -177,6 +177,10 @@
         </div>
       </div>
 
+      <!-- Save status: "Saved" / "Saving…" / "Unsaved — retrying". A local copy
+           of every edit is kept in this browser until the server confirms it. -->
+      <p id="workout-save-state" class="workout-save-state" aria-live="polite"></p>
+
       <div id="workout-exercises" class="workout-exercises"></div>
       <p id="workout-empty" class="routine-empty" hidden>
         No exercises yet. Add one to start logging sets.
@@ -325,6 +329,14 @@
       <button id="settings-export" class="btn-dark settings-section" type="button">
         Export workout history (CSV)
       </button>
+      <button id="settings-export-json" class="btn-dark settings-section" type="button">
+        Export all my data (JSON backup)
+      </button>
+      <button id="settings-import-btn" class="btn-dark settings-section" type="button">
+        Import data from a backup
+      </button>
+      <input id="settings-import-file" type="file" accept="application/json,.json" hidden />
+      <p id="settings-data-msg" class="message" role="alert" aria-live="polite"></p>
       <button id="settings-change-password-btn" class="btn-dark settings-section" type="button">
         Change password
       </button>
@@ -370,6 +382,20 @@
       <p id="settings-delete-msg" class="message" role="alert" aria-live="polite"></p>
       <button id="settings-delete" class="btn-danger" type="button" disabled>Delete account</button>
     </section>
+
+    <!-- Trash: soft-deleted workouts + measurements, restorable for 30 days. -->
+    <section id="trash-view" class="subview" hidden>
+      <div class="subview-head">
+        <button id="trash-back" class="ghost" type="button" aria-label="Back to home">&larr;</button>
+        <h2 class="subview-title">Trash</h2>
+      </div>
+      <p class="settings-danger-note">
+        Deleted workouts and measurements are kept here for 30 days, then removed
+        for good.
+      </p>
+      <p id="trash-status" class="exercise-status" aria-live="polite"></p>
+      <div id="trash-list" class="routine-list"></div>
+    </section>
   </main>
 
   <!-- Rest countdown, shown while resting between sets. -->
@@ -401,6 +427,7 @@
         <button id="menu-settings" class="side-menu-item" type="button">Settings</button>
         <button id="menu-calendar" class="side-menu-item" type="button">Calendar</button>
         <button id="menu-measurements" class="side-menu-item" type="button">Measurements</button>
+        <button id="menu-trash" class="side-menu-item" type="button">Trash</button>
       </div>
       <button id="menu-logout" class="side-menu-item side-menu-item--danger" type="button">Log out</button>
     </nav>
@@ -423,6 +450,6 @@
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=32"></script>
+  <script src="/app.js?v=33"></script>
 </body>
 </html>

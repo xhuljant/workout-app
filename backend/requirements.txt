@@ -1,11 +1,18 @@
-# Backend dependencies. Versions are left flexible for now; once everything works
-# you can "pin" them (e.g. run `pip freeze`) so builds are perfectly reproducible.
+# Backend runtime dependencies -- PINNED for reproducible builds.
+#
+# To regenerate after intentionally upgrading something:
+#   docker compose run --rm --entrypoint "" api pip freeze
+# then paste the exact "==" lines back here (keep this header + the grouping).
+#
+# A MAJOR Postgres upgrade (the postgres:16.x image tag in docker-compose.yml)
+# is NOT covered by pinning -- it needs a dump/restore. See README "Upgrading".
 
-fastapi                 # the web framework
-uvicorn[standard]       # the server that runs the FastAPI app
-sqlalchemy              # talks to the database using Python objects
-psycopg2-binary         # the PostgreSQL driver SQLAlchemy uses
-pydantic-settings       # loads/validates config from environment variables
-email-validator         # required for Pydantic's EmailStr type
-argon2-cffi             # argon2 password hashing
-pyjwt                   # creates and verifies JWT login tokens
+fastapi==0.115.6            # the web framework
+uvicorn[standard]==0.34.0   # the server that runs the FastAPI app
+sqlalchemy==2.0.36          # talks to the database using Python objects
+alembic==1.14.0             # schema migrations (alembic upgrade head on boot)
+psycopg2-binary==2.9.10     # the PostgreSQL driver SQLAlchemy uses
+pydantic-settings==2.7.1    # loads/validates config from environment variables
+email-validator==2.2.0      # required for Pydantic's EmailStr type
+argon2-cffi==23.1.0         # argon2 password hashing
+pyjwt==2.10.1               # creates and verifies JWT login tokens

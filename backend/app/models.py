@@ -21,6 +21,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Boolean,
+    CheckConstraint,
     ForeignKey,
     Index,
     func,
@@ -139,6 +140,13 @@ class Exercise(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    __table_args__ = (
+        CheckConstraint(
+            "tracking_type IN ('weight_reps', 'reps', 'time', 'distance_time')",
+            name="ck_exercises_tracking_type",
+        ),
+    )
+
 
 class Workout(Base):
     """One workout session for a user.
@@ -183,6 +191,13 @@ class Workout(Base):
         JSONB, nullable=False, default=lambda: {"exercises": []}
     )
 
+    # Bumped on every accepted write to PUT /api/workouts/active. The client sends
+    # the version it last saw; a mismatch means another device wrote in between,
+    # so the server returns 409 instead of silently overwriting those edits.
+    content_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="1", default=1
+    )
+
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -209,6 +224,16 @@ class Workout(Base):
             "user_id",
             unique=True,
             postgresql_where=text("status = 'active' AND deleted_at IS NULL"),
+        ),
+        CheckConstraint(
+            "status IN ('active', 'finished')", name="ck_workouts_status"
+        ),
+        CheckConstraint(
+            "content_version >= 1", name="ck_workouts_content_version_positive"
+        ),
+        CheckConstraint(
+            "rest_seconds IS NULL OR rest_seconds >= 0",
+            name="ck_workouts_rest_seconds_nonneg",
         ),
     )
 
@@ -264,6 +289,13 @@ class Routine(Base):
     )
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "rest_seconds IS NULL OR rest_seconds >= 0",
+            name="ck_routines_rest_seconds_nonneg",
+        ),
     )
 
 

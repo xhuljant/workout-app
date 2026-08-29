@@ -138,9 +138,15 @@ class WorkoutContent(BaseModel):
 
 
 class WorkoutUpdate(BaseModel):
-    """Body for PUT /api/workouts/active."""
+    """Body for PUT /api/workouts/active.
+
+    `content_version` is the version the client last loaded. If it's given and
+    doesn't match the server's, the write is rejected with 409 (another device
+    saved in between). Omit it to force an unconditional write (old clients).
+    """
     content: WorkoutContent
     rest_seconds: int | None = Field(default=None, ge=0, le=3600)
+    content_version: int | None = None
 
 
 class WorkoutStart(BaseModel):
@@ -157,6 +163,7 @@ class WorkoutPublic(BaseModel):
     status: str
     routine_id: uuid.UUID | None
     rest_seconds: int | None
+    content_version: int
     content: WorkoutContent
     started_at: datetime
     finished_at: datetime | None
@@ -181,6 +188,15 @@ class WorkoutCalendarEntry(BaseModel):
     id: uuid.UUID
     at: datetime            # finished_at, or started_at if never finished
     name: str               # routine name; "" for ad-hoc (routine-less) workouts
+
+
+class WorkoutTrashItem(BaseModel):
+    """A soft-deleted workout, for the Trash screen."""
+    id: uuid.UUID
+    name: str               # routine name, or "Workout"
+    at: datetime            # finished_at / started_at
+    deleted_at: datetime
+    exercise_count: int
 
 
 class MeasurementCreate(BaseModel):
@@ -213,6 +229,15 @@ class MeasurementListItem(BaseModel):
 class MeasurementPublic(MeasurementListItem):
     """A single entry in full, including its progress photos."""
     photos: list[str]
+
+
+class MeasurementTrashItem(BaseModel):
+    """A soft-deleted measurement entry, for the Trash screen."""
+    id: uuid.UUID
+    measured_on: date
+    deleted_at: datetime
+    value_count: int
+    photo_count: int
 
 
 class ExercisePrevious(BaseModel):
@@ -336,3 +361,37 @@ class FolderPublic(BaseModel):
     is_default: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# --- Full data export / import ------------------------------------------
+
+class DataExport(BaseModel):
+    """Everything one user owns, as a single self-contained JSON document.
+
+    Rows are dumped verbatim (including soft-deleted ones and full JSONB blobs)
+    so the file is a real, restorable backup -- not the lossy CSV.
+    """
+    schema_version: int = 1
+    exported_at: datetime
+    user: dict
+    exercises: list[dict] = Field(default_factory=list)   # custom exercises only
+    folders: list[dict] = Field(default_factory=list)
+    routines: list[dict] = Field(default_factory=list)
+    workouts: list[dict] = Field(default_factory=list)
+    measurements: list[dict] = Field(default_factory=list)
+
+
+class DataImport(BaseModel):
+    """Body for POST /api/data/import -- a document produced by /export."""
+    schema_version: int = 1
+    exercises: list[dict] = Field(default_factory=list)
+    folders: list[dict] = Field(default_factory=list)
+    routines: list[dict] = Field(default_factory=list)
+    workouts: list[dict] = Field(default_factory=list)
+    measurements: list[dict] = Field(default_factory=list)
+
+
+class DataImportResult(BaseModel):
+    """Per-table counts from an import. Merge-by-id: existing rows are left alone."""
+    inserted: dict[str, int]
+    skipped: dict[str, int]

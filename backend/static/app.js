@@ -185,6 +185,22 @@ const setDeleteEmailInput = document.getElementById("set-delete-email");
 const settingsDeleteMsg = document.getElementById("settings-delete-msg");
 const settingsDeleteBtn = document.getElementById("settings-delete");
 
+// Full JSON backup export / import (Settings)
+const settingsExportJsonBtn = document.getElementById("settings-export-json");
+const settingsImportBtn = document.getElementById("settings-import-btn");
+const settingsImportFile = document.getElementById("settings-import-file");
+const settingsDataMsg = document.getElementById("settings-data-msg");
+
+// Trash sub-view (opened from the ☰ menu)
+const menuTrashBtn = document.getElementById("menu-trash");
+const trashView = document.getElementById("trash-view");
+const trashBackBtn = document.getElementById("trash-back");
+const trashStatusEl = document.getElementById("trash-status");
+const trashListEl = document.getElementById("trash-list");
+
+// Active-workout save status line
+const workoutSaveStateEl = document.getElementById("workout-save-state");
+
 // The logged-in user's profile (from /api/auth/me), kept for the Settings screen.
 let currentUser = null;
 
@@ -265,6 +281,7 @@ function detailToText(detail) {
 }
 
 // --- Protected call: who am I? ------------------------------------------
+let profileRetries = 0;
 async function loadProfile() {
   try {
     const res = await authFetch(API + "/me");   // authFetch refreshes a stale token
@@ -273,8 +290,24 @@ async function loadProfile() {
       showLoggedOut();
       return;
     }
+    profileRetries = 0;
     showLoggedIn(await res.json());
   } catch (err) {
+    if (err instanceof TransientNetworkError && profileRetries < 5) {
+      // Server unreachable, but the tokens may be perfectly valid -- don't log
+      // the user out. Back off and try again.
+      profileRetries += 1;
+      setTimeout(loadProfile, 3000);
+      return;
+    }
+    if (err instanceof TransientNetworkError) {
+      // Gave up retrying -- show the login form so the screen isn't stuck blank,
+      // but KEEP the tokens so a refresh reconnects without re-entering a password.
+      form.hidden = false;
+      tabsEl.hidden = false;
+      showMessage("Can't reach the server. Check your connection and reload.");
+      return;
+    }
     // authFetch already cleared tokens + showed the login form on a hard 401.
     showLoggedOut();
   }
@@ -285,7 +318,7 @@ async function loadProfile() {
 const ALL_VIEWS = [
   home, exercisesView, exerciseCreateView, workoutView, routineView,
   historyView, historyDetailView, calendarView, measurementsView,
-  measurementEditorView, settingsView, passwordView, deleteView,
+  measurementEditorView, settingsView, passwordView, deleteView, trashView,
 ];
 
 function showView(el) {
@@ -318,6 +351,7 @@ function showLoggedOut() {
   stopDurationTimer();
   endRestTimer();
   activeWorkout = null;
+  resetWorkoutSaveState();   // stop retries; keep any WAL entry for next login
   refreshStartButton();
 }
 
@@ -449,40 +483,70 @@ logoutBtn.addEventListener("click", () => {
 // --- Exercises --------------------------------------------------------------
 const EXERCISES_API = "/api/exercises";
 
+// Thrown when a request can't be completed for a reason that is NOT "the session
+// is dead" -- offline, a 5xx, a refresh that timed out. Callers that hold unsaved
+// data (saveWorkout) catch this, keep their local copy, and retry later. It must
+// never bounce the user to the login screen.
+class TransientNetworkError extends Error {}
+
 // Swap the refresh token for a fresh access + refresh pair. Deduped so a burst of
-// parallel 401s only triggers one refresh request.
+// parallel 401s only triggers one refresh request. Resolves to:
+//   "ok"        -- new tokens stored
+//   "dead"      -- the refresh token was rejected (401/403); the session is over
+//   "transient" -- couldn't tell (offline / 5xx); tokens left untouched
 let refreshInFlight = null;
 function refreshSession() {
-  if (!store.refresh) return Promise.resolve(false);
+  if (!store.refresh) return Promise.resolve("dead");
   if (!refreshInFlight) {
-    refreshInFlight = fetch(API + "/refresh", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: store.refresh }),
-    })
-      .then(async (res) => {
-        if (!res.ok) return false;
-        store.set(await res.json());
-        return true;
-      })
-      .catch(() => false)
-      .finally(() => { refreshInFlight = null; });
+    refreshInFlight = (async () => {
+      // One retry on a transient failure before giving up as "transient".
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const res = await fetch(API + "/refresh", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refresh_token: store.refresh }),
+          });
+          if (res.ok) {
+            store.set(await res.json());
+            return "ok";
+          }
+          if (res.status === 401 || res.status === 403) return "dead";
+          // 5xx / anything else -> transient; wait a moment and retry once.
+        } catch (err) {
+          // network error -> transient
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      return "transient";
+    })().finally(() => { refreshInFlight = null; });
   }
   return refreshInFlight;
 }
 
 // fetch() with the access token attached. On a 401 we try to refresh the session
-// once and retry; only if that fails do we drop back to the login form.
+// once and retry. A *rejected* refresh drops back to the login form; a refresh
+// that merely couldn't be reached raises TransientNetworkError instead, so a
+// server blip or lost connection never logs the user out mid-workout.
 async function authFetch(path, options = {}, retried = false) {
-  const res = await fetch(path, {
-    ...options,
-    headers: { ...(options.headers || {}), Authorization: "Bearer " + store.access },
-  });
+  let res;
+  try {
+    res = await fetch(path, {
+      ...options,
+      headers: { ...(options.headers || {}), Authorization: "Bearer " + store.access },
+    });
+  } catch (err) {
+    throw new TransientNetworkError("Could not reach the server.");
+  }
 
   if (res.status !== 401) return res;
 
-  if (!retried && (await refreshSession())) {
-    return authFetch(path, options, true);
+  if (!retried) {
+    const outcome = await refreshSession();
+    if (outcome === "ok") return authFetch(path, options, true);
+    if (outcome === "transient") {
+      throw new TransientNetworkError("Could not reach the server.");
+    }
   }
 
   store.clear();
@@ -868,6 +932,17 @@ function renderExerciseDetail(ex, body, stats) {
         exerciseStatsCache.delete(ex.id);
         loadExerciseDetail(ex, body);
         loadHomeHistory();
+        showToast("Workout deleted", {
+          actionLabel: "Undo",
+          onAction: async () => {
+            try {
+              await authFetch(`${WORKOUTS_API}/${s.workout_id}/restore`, { method: "POST" });
+            } catch (err) { /* ignore */ }
+            exerciseStatsCache.delete(ex.id);
+            loadExerciseDetail(ex, body);
+            loadHomeHistory();
+          },
+        });
       } catch (err) {
         /* ignore */
       }
@@ -1149,8 +1224,9 @@ async function loadActiveWorkout() {
     const res = await authFetch(WORKOUTS_API + "/active");
     activeWorkout = res.ok ? await res.json() : null;
   } catch (err) {
-    activeWorkout = null;
+    activeWorkout = null;   // transient failures retry on the next load
   }
+  if (activeWorkout) restoreWalIfAny();   // recover edits a failed save left behind
   refreshStartButton();
 
   // A workout in progress -> jump straight into it (unless the user already
@@ -1200,6 +1276,7 @@ function openWorkout() {
   exercisePickHandler = null;
   editingRoutine = null;
   showView(workoutView);
+  setSaveState(workoutDirty ? "offline" : "saved");
   renderWorkout();
   startDurationTimer();
   resumeRestTimer();         // re-show the countdown if one's still running
@@ -1438,11 +1515,31 @@ function checkForPr(entry, set, numEl) {
 }
 
 let toastTimer = null;
-function showToast(msg) {
-  toastEl.textContent = msg;
+// showToast("message")
+// showToast("message", { actionLabel: "Undo", onAction: fn })  -- adds a button
+function showToast(msg, { actionLabel = null, onAction = null, duration = 2800 } = {}) {
+  toastEl.replaceChildren();
+  const span = document.createElement("span");
+  span.textContent = msg;
+  toastEl.append(span);
+
+  if (actionLabel && onAction) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "toast-action";
+    btn.textContent = actionLabel;
+    btn.addEventListener("click", () => {
+      clearTimeout(toastTimer);
+      toastEl.hidden = true;
+      onAction();
+    });
+    toastEl.append(btn);
+    duration = Math.max(duration, 6000);
+  }
+
   toastEl.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toastEl.hidden = true; }, 2800);
+  toastTimer = setTimeout(() => { toastEl.hidden = true; }, duration);
 }
 
 // --- Duration timer ----------------------------------------------------
@@ -1625,16 +1722,75 @@ restEditorSaveBtn.addEventListener("click", async () => {
   activeWorkout.rest_seconds = restEditorValue;
   renderWorkout();   // refresh every "Rest Timer: ..." label
   try {
-    await authFetch(WORKOUTS_API + "/active", {
+    const body = { content: activeWorkout.content, rest_seconds: restEditorValue };
+    if (typeof activeWorkout.content_version === "number") {
+      body.content_version = activeWorkout.content_version;
+    }
+    const res = await authFetch(WORKOUTS_API + "/active", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: activeWorkout.content, rest_seconds: restEditorValue }),
+      body: JSON.stringify(body),
     });
-  } catch (err) { /* the label already updated locally */ }
+    if (res.ok) {
+      const saved = await res.json().catch(() => null);
+      if (saved && activeWorkout) activeWorkout.content_version = saved.content_version;
+      clearWal(activeWorkout && activeWorkout.id);
+      setSaveState("saved");
+    } else if (res.status === 409) {
+      await handleSaveConflict(activeWorkout.id, res);
+    }
+  } catch (err) { /* the label already updated locally; a later save will sync */ }
 });
 
-// --- Saving ----------------------------------------------------------
+// --- Saving --------------------------------------------------------------
+// Every edit is mirrored to localStorage FIRST (a write-ahead log), then pushed
+// to the server. A failed push keeps the WAL entry and retries with backoff, so
+// closing the tab or losing the network between a failed save and the next edit
+// no longer loses those sets. The WAL entry is cleared only once the server
+// confirms the write.
+let workoutDirty = false;          // unsaved edits exist (server hasn't confirmed)
+let saveRetryTimer = null;
+let saveRetryDelay = 2000;         // grows 2s -> 5s -> 15s -> 30s on repeated failure
+let saveInFlight = false;
+let conflictRetries = 0;
+
+const WAL_PREFIX = "wal:workout:";
+const walKey = (id) => WAL_PREFIX + id;
+
+function writeWal() {
+  try {
+    if (!activeWorkout) return;
+    localStorage.setItem(walKey(activeWorkout.id), JSON.stringify({
+      content: activeWorkout.content,
+      content_version: activeWorkout.content_version ?? null,
+      ts: Date.now(),
+    }));
+  } catch (err) { /* private mode / quota -- nothing we can do */ }
+}
+function readWal(id) {
+  try { return JSON.parse(localStorage.getItem(walKey(id)) || "null"); }
+  catch (err) { return null; }
+}
+function clearWal(id) {
+  try { localStorage.removeItem(walKey(id)); } catch (err) { /* ignore */ }
+}
+
+function setSaveState(state) {
+  if (!workoutSaveStateEl) return;
+  const text = {
+    saved: "",
+    saving: "Saving…",
+    pending: "Unsaved changes",
+    offline: "Unsaved — will retry",
+  }[state] ?? "";
+  workoutSaveStateEl.textContent = text;
+  workoutSaveStateEl.dataset.state = state;
+}
+
 function scheduleSave() {
+  workoutDirty = true;
+  writeWal();                       // durable immediately, before the debounce
+  setSaveState("pending");
   clearTimeout(workoutSaveTimer);
   workoutSaveTimer = setTimeout(() => saveWorkout(), 600);
 }
@@ -1642,29 +1798,161 @@ function scheduleSave() {
 async function saveWorkout({ keepalive = false } = {}) {
   clearTimeout(workoutSaveTimer);
   workoutSaveTimer = null;
-  if (!activeWorkout) return;
+  if (!activeWorkout || saveInFlight) return;
   ensureContent();
+  writeWal();
+
+  const id = activeWorkout.id;
+  const body = { content: activeWorkout.content };
+  if (typeof activeWorkout.content_version === "number") {
+    body.content_version = activeWorkout.content_version;
+  }
+
+  saveInFlight = true;
+  setSaveState("saving");
+  let res;
   try {
-    await authFetch(WORKOUTS_API + "/active", {
+    res = await authFetch(WORKOUTS_API + "/active", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: activeWorkout.content }),
+      body: JSON.stringify(body),
       keepalive,
     });
   } catch (err) {
-    /* best effort -- the next edit will try again */
+    saveInFlight = false;
+    scheduleSaveRetry();             // transient (offline / 5xx / server blip)
+    return;
   }
+  saveInFlight = false;
+
+  if (res.status === 409) {
+    await handleSaveConflict(id, res);
+    return;
+  }
+  if (!res.ok) {
+    scheduleSaveRetry();
+    return;
+  }
+
+  // Success: adopt the new version, drop the WAL entry.
+  try {
+    const saved = await res.json();
+    if (activeWorkout && activeWorkout.id === id && saved) {
+      activeWorkout.content_version = saved.content_version;
+    }
+  } catch (err) { /* body not JSON -- fine, still saved */ }
+  workoutDirty = false;
+  conflictRetries = 0;
+  saveRetryDelay = 2000;
+  clearTimeout(saveRetryTimer);
+  saveRetryTimer = null;
+  clearWal(id);
+  setSaveState("saved");
+}
+
+function scheduleSaveRetry() {
+  workoutDirty = true;
+  setSaveState("offline");
+  clearTimeout(saveRetryTimer);
+  saveRetryTimer = setTimeout(() => {
+    saveRetryDelay = Math.min(30000, Math.round(saveRetryDelay * 2.5));
+    if (activeWorkout && workoutDirty) saveWorkout();
+  }, saveRetryDelay);
+}
+
+// 409 = another device saved this workout since we last loaded it.
+async function handleSaveConflict(id, res) {
+  let server = null;
+  try {
+    const data = await res.json();
+    server = data && data.detail && data.detail.server;
+  } catch (err) { /* ignore */ }
+  if (!activeWorkout || activeWorkout.id !== id) { setSaveState("saved"); return; }
+
+  const haveLocalEdits = workoutDirty || !!readWal(id);
+  if (haveLocalEdits && conflictRetries < 3) {
+    // Keep our edits (deliberate last-write-wins), but stash the server copy so
+    // nothing is truly lost, adopt its version, and try once more.
+    try {
+      localStorage.setItem(
+        "conflict:workout:" + id + ":" + Date.now(),
+        JSON.stringify(server || {}),
+      );
+    } catch (err) { /* ignore */ }
+    if (server && typeof server.content_version === "number") {
+      activeWorkout.content_version = server.content_version;
+    }
+    conflictRetries += 1;
+    console.warn("workout save conflict: kept local edits, stashed server copy");
+    showToast("Changed on another device — your current edits were kept");
+    await saveWorkout();
+    return;
+  }
+
+  // No local edits (or we've retried enough): take the server's copy.
+  if (server) {
+    activeWorkout.content = server.content;
+    activeWorkout.content_version = server.content_version;
+    if (typeof server.rest_seconds === "number") {
+      activeWorkout.rest_seconds = server.rest_seconds;
+    }
+    if (!workoutView.hidden) renderWorkout();
+  }
+  workoutDirty = false;
+  conflictRetries = 0;
+  clearWal(id);
+  setSaveState("saved");
+}
+
+// On (re)attaching to an active workout from the server: if a WAL entry exists,
+// the last save never confirmed -- restore the local copy and push it.
+function restoreWalIfAny() {
+  if (!activeWorkout) return;
+  const id = activeWorkout.id;
+  const wal = readWal(id);
+  if (!wal || !wal.content) return;
+  try {
+    localStorage.setItem(
+      "walserver:workout:" + id + ":" + Date.now(),
+      JSON.stringify({ content: activeWorkout.content, content_version: activeWorkout.content_version }),
+    );
+  } catch (err) { /* ignore */ }
+  activeWorkout.content = wal.content;
+  workoutDirty = true;
+  showToast("Restored unsaved changes from this device");
+  scheduleSave();
+}
+
+function resetWorkoutSaveState(id) {
+  workoutDirty = false;
+  conflictRetries = 0;
+  saveRetryDelay = 2000;
+  saveInFlight = false;
+  clearTimeout(saveRetryTimer);
+  saveRetryTimer = null;
+  clearTimeout(workoutSaveTimer);
+  workoutSaveTimer = null;
+  if (id) clearWal(id);
+  setSaveState("saved");
 }
 
 function flushWorkoutSave() {
-  if (workoutSaveTimer) saveWorkout();
+  if (workoutSaveTimer || workoutDirty) saveWorkout();
 }
 
-// If the tab is hidden/closed with an edit still pending, save right away.
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden" && activeWorkout && workoutSaveTimer) {
+// Save right away if the page is being hidden/closed/backgrounded with an edit
+// still pending. `pagehide` is the reliable one on iOS Safari.
+function flushOnLeave() {
+  if (activeWorkout && (workoutSaveTimer || workoutDirty)) {
     saveWorkout({ keepalive: true });
   }
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flushOnLeave();
+});
+window.addEventListener("pagehide", flushOnLeave);
+window.addEventListener("online", () => {
+  if (activeWorkout && workoutDirty) saveWorkout();
 });
 
 // --- Add exercise / finish / discard --------------------------------
@@ -1763,9 +2051,9 @@ workoutDiscardBtn.addEventListener("click", async () => {
 
 // Shared teardown after a workout ends (finished or discarded).
 function endWorkoutUI() {
+  const endedId = activeWorkout && activeWorkout.id;
   activeWorkout = null;
-  clearTimeout(workoutSaveTimer);
-  workoutSaveTimer = null;
+  resetWorkoutSaveState(endedId);   // clears the WAL + any pending retry
   stopDurationTimer();
   endRestTimer();
   refreshStartButton();
@@ -2315,15 +2603,29 @@ async function openHistoryDetail(id) {
 historyDetailDeleteBtn.addEventListener("click", async () => {
   if (!historyDetailId) return;
   if (!confirm("Delete this workout? It's removed from history everywhere.")) return;
+  const deletedId = historyDetailId;
+  const cameFrom = historyDetailFrom;
   historyDetailDeleteBtn.disabled = true;
   try {
-    const res = await authFetch(`${WORKOUTS_API}/${historyDetailId}`, { method: "DELETE" });
+    const res = await authFetch(`${WORKOUTS_API}/${deletedId}`, { method: "DELETE" });
     if (res.status !== 204 && res.status !== 404) return;
     exerciseStatsCache.clear();   // any exercise's stats may have changed
-    showView(historyDetailFrom);
+    showView(cameFrom);
     loadHistory();
     loadHomeHistory();
-    if (historyDetailFrom === calendarView) loadCalendar();
+    if (cameFrom === calendarView) loadCalendar();
+    showToast("Workout deleted", {
+      actionLabel: "Undo",
+      onAction: async () => {
+        try {
+          await authFetch(`${WORKOUTS_API}/${deletedId}/restore`, { method: "POST" });
+        } catch (err) { /* ignore */ }
+        exerciseStatsCache.clear();
+        loadHistory();
+        loadHomeHistory();
+        if (cameFrom === calendarView) loadCalendar();
+      },
+    });
   } catch (err) {
     /* stay put */
   } finally {
@@ -2940,12 +3242,22 @@ measurementForm.addEventListener("submit", async (event) => {
 measurementDeleteBtn.addEventListener("click", async () => {
   if (!measurementEditId) return;
   if (!confirm("Delete this measurement entry?")) return;
+  const deletedId = measurementEditId;
   measurementDeleteBtn.disabled = true;
   try {
-    const res = await authFetch(MEASUREMENTS_API + "/" + measurementEditId, { method: "DELETE" });
+    const res = await authFetch(MEASUREMENTS_API + "/" + deletedId, { method: "DELETE" });
     if (res.status !== 204 && res.status !== 404) return;
     closeMeasurementEditor();
     await loadMeasurements();
+    showToast("Measurement deleted", {
+      actionLabel: "Undo",
+      onAction: async () => {
+        try {
+          await authFetch(MEASUREMENTS_API + "/" + deletedId + "/restore", { method: "POST" });
+        } catch (err) { /* ignore */ }
+        await loadMeasurements();
+      },
+    });
   } catch (err) {
     /* stay put */
   } finally {
@@ -3036,6 +3348,8 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !sideMenu.hidden) closeSideMenu();
 });
 menuSettingsBtn.addEventListener("click", () => { closeSideMenu(); openSettings(); });
+menuTrashBtn.addEventListener("click", () => { closeSideMenu(); openTrash(); });
+trashBackBtn.addEventListener("click", () => showView(home));
 
 // --- Settings ------------------------------------------------------------
 settingsBackBtn.addEventListener("click", () => showView(home));
@@ -3189,6 +3503,162 @@ settingsDeleteBtn.addEventListener("click", async () => {
     setMsg(settingsDeleteMsg, err.message || "Could not reach the server.");
   } finally {
     settingsDeleteBtn.disabled = false;
+  }
+});
+
+// --- Trash -------------------------------------------------------------------
+// Soft-deleted workouts + measurements, restorable until the 30-day purge.
+async function openTrash() {
+  showView(trashView);
+  await loadTrash();
+}
+
+async function loadTrash() {
+  trashStatusEl.textContent = "Loading…";
+  trashListEl.replaceChildren();
+  let workouts = [];
+  let measurements = [];
+  try {
+    const [wRes, mRes] = await Promise.all([
+      authFetch(WORKOUTS_API + "/trash"),
+      authFetch(MEASUREMENTS_API + "/trash"),
+    ]);
+    workouts = wRes.ok ? await wRes.json() : [];
+    measurements = mRes.ok ? await mRes.json() : [];
+  } catch (err) {
+    trashStatusEl.textContent = err.message || "Could not reach the server.";
+    return;
+  }
+
+  if (workouts.length === 0 && measurements.length === 0) {
+    trashStatusEl.textContent = "Trash is empty.";
+    return;
+  }
+  trashStatusEl.textContent = "";
+
+  for (const w of workouts) {
+    trashListEl.append(buildTrashRow(
+      `${w.name}`,
+      `${fmtDate(w.at)}  ·  ${w.exercise_count} exercise${w.exercise_count === 1 ? "" : "s"}  ·  deleted ${fmtDate(w.deleted_at)}`,
+      async () => {
+        const res = await authFetch(`${WORKOUTS_API}/${w.id}/restore`, { method: "POST" });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          showToast(detailToText(data.detail) || "Could not restore.");
+          return;
+        }
+        exerciseStatsCache.clear();
+        loadHomeHistory();
+        loadTrash();
+      },
+    ));
+  }
+
+  for (const m of measurements) {
+    trashListEl.append(buildTrashRow(
+      `Measurements — ${fmtYmd(m.measured_on)}`,
+      `${m.value_count} value${m.value_count === 1 ? "" : "s"}` +
+        (m.photo_count ? `  ·  ${m.photo_count} photo${m.photo_count === 1 ? "" : "s"}` : "") +
+        `  ·  deleted ${fmtDate(m.deleted_at)}`,
+      async () => {
+        const res = await authFetch(`${MEASUREMENTS_API}/${m.id}/restore`, { method: "POST" });
+        if (res.ok) loadTrash();
+      },
+    ));
+  }
+}
+
+function buildTrashRow(title, meta, onRestore) {
+  const row = document.createElement("div");
+  row.className = "history-row";
+
+  const main = document.createElement("div");
+  main.className = "history-row-main";
+  const t = document.createElement("span");
+  t.className = "history-row-title";
+  t.textContent = title;
+  const m = document.createElement("span");
+  m.className = "history-row-meta";
+  m.textContent = meta;
+  main.append(t, m);
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "ghost";
+  btn.textContent = "Restore";
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    try { await onRestore(); } finally { btn.disabled = false; }
+  });
+
+  row.append(main, btn);
+  return row;
+}
+
+// --- Full JSON backup: export / import (Settings) ---------------------------
+settingsExportJsonBtn.addEventListener("click", async () => {
+  settingsExportJsonBtn.disabled = true;
+  setMsg(settingsDataMsg, "");
+  try {
+    const res = await authFetch("/api/data/export");
+    if (!res.ok) { setMsg(settingsDataMsg, "Could not export."); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `workout-backup-${todayYmd()}.json`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setMsg(settingsDataMsg, "Backup downloaded.", "ok");
+  } catch (err) {
+    setMsg(settingsDataMsg, err.message || "Could not reach the server.");
+  } finally {
+    settingsExportJsonBtn.disabled = false;
+  }
+});
+
+settingsImportBtn.addEventListener("click", () => settingsImportFile.click());
+
+settingsImportFile.addEventListener("change", async () => {
+  const file = settingsImportFile.files && settingsImportFile.files[0];
+  settingsImportFile.value = "";
+  if (!file) return;
+  setMsg(settingsDataMsg, "Importing…", "ok");
+
+  let doc;
+  try {
+    doc = JSON.parse(await file.text());
+  } catch (err) {
+    setMsg(settingsDataMsg, "That file isn't valid JSON.");
+    return;
+  }
+
+  try {
+    const res = await authFetch("/api/data/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(doc),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setMsg(settingsDataMsg, detailToText(data.detail) || "Import failed.");
+      return;
+    }
+    const ins = data.inserted || {};
+    const total = Object.values(ins).reduce((a, b) => a + b, 0);
+    setMsg(
+      settingsDataMsg,
+      `Imported ${total} row${total === 1 ? "" : "s"} ` +
+        `(${ins.workouts || 0} workouts, ${ins.routines || 0} routines, ` +
+        `${ins.measurements || 0} measurements). Existing rows were left as-is.`,
+      "ok",
+    );
+    loadRoutines();
+    loadHomeHistory();
+  } catch (err) {
+    setMsg(settingsDataMsg, err.message || "Could not reach the server.");
   }
 });
 

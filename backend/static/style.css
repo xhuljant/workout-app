@@ -1370,6 +1370,40 @@ button.calendar-day { margin: 0; appearance: none; cursor: pointer; }
 /* Keep the workout's Finish button scrollable clear of the rest bar */
 #workout-view.has-rest-timer { padding-bottom: 96px; }
 
+/* Active-workout save status line (under the Duration / Volume / Sets row). */
+.workout-save-state {
+  margin: 4px 0 0;
+  min-height: 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: right;
+}
+.workout-save-state[data-state="offline"],
+.workout-save-state[data-state="pending"] { color: var(--error); }
+.workout-save-state[data-state="saving"] { color: var(--muted); }
+
+/* Toast: now may carry an action button (e.g. Undo). */
+.toast {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.toast-action {
+  flex: none;
+  padding: 4px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.toast-action:hover { background: var(--accent); color: #fff; }
+
 /* Respect people who prefer reduced motion */
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
