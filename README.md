@@ -1,121 +1,258 @@
-# Workout App
+# Workout Log
 
-A self-hosted workout tracker. Built piece by piece.
-
-**Milestone 1: accounts + login.** A FastAPI backend with a Postgres database and
-a login/register screen, so we can confirm the whole login round-trip works
-before adding anything else.
-
-**Milestone 2: the exercise library.** After login you land on a home screen.
-From there, **Exercises** opens a searchable library that is seeded on startup
-from the public **free-exercise-db** (800+ exercises). Any user can add a custom
-exercise, and because the library is one shared table it shows up for everyone.
-
-**Milestone 3 (this build): live workouts.** **Start empty workout** opens a
-session screen with a running duration timer, live volume / set totals, and a
-block per exercise with an editable sets table (LBS / REPS / done). Add exercises
-from the library. The in-progress workout is saved to the backend on every edit,
-so it resumes after a reload, a closed tab, or on another device. **Finish**
-records it (`status = finished`) as history; **Discard Workout** throws it away.
+A self-hosted, multi-account workout tracker. A FastAPI + PostgreSQL backend
+serves a dependency-free vanilla-JavaScript single-page app from the same
+process. It's built to run on a home server on a private network; the client is
+mobile-first and installs to the home screen as a PWA.
 
 ---
 
-## What's inside
+## Features
+
+**Accounts**
+Register and log in with an email and password (argon2id hashing). Sessions use a
+short-lived JWT access token (15 min) and a long-lived refresh token (90 days);
+the client refreshes silently in the background. Change password and delete
+account are supported; account deletion is a soft delete and the email is
+tombstoned so it can be reused.
+
+**Exercise library**
+One shared library, seeded on first boot from a vendored snapshot of
+[free-exercise-db](https://github.com/yuhonas/free-exercise-db) (~873 exercises).
+Any user can add a custom exercise and it becomes visible to everyone. Each
+exercise has a tracking mode — *weight × reps*, *reps only*, *time*, or
+*distance + time* — that determines how its sets are logged and scored.
+
+**Live workouts**
+Start an empty session or one pre-filled from a routine. The in-progress workout
+is server-side state, so it resumes exactly where it was left after a reload, a
+closed tab, or on another device. A session shows a running duration timer, an
+adjustable rest timer, and live volume / completed-set tallies. Completed sets
+are checked for personal records; each set row shows the previous session's
+numbers and can autofill from them.
+
+**Routines & folders**
+Reusable templates (an ordered list of exercises with planned sets), grouped into
+folders that can be renamed, reordered, and collapsed. On **Finish**, the app can
+fold a session's exercise changes back into the routine it came from.
+
+**History & analytics**
+A finished-workout list with a detail view, per-exercise statistics (heaviest
+set, best estimated 1RM, totals, etc.) with an inline progress chart, and a
+training calendar.
+
+**Body measurements**
+Dated entries stored in canonical units (kg / cm / %) and converted to the user's
+preferred units for display, with up to four progress photos per entry.
+
+**Data ownership**
+CSV export of every logged set; full-account JSON export and import
+(merge-by-id — importing never overwrites existing rows); and a Trash screen —
+every delete is soft and restorable for 30 days, with one-tap Undo on the delete
+action itself.
+
+---
+
+## Architecture
+
+### Stack
+
+| Layer | Choice |
+| --- | --- |
+| Language / runtime | Python 3.12 |
+| Web framework | FastAPI (ASGI, served by Uvicorn) |
+| ORM | SQLAlchemy 2.0, synchronous |
+| Validation | Pydantic v2 schemas, kept separate from the ORM models |
+| Database | PostgreSQL 16, driver `psycopg2` |
+| Migrations | Alembic |
+| Front-end | one `index.html` + `style.css` + `app.js` (~3k lines) — no framework, no build step |
+
+Backend dependencies are pinned in `backend/requirements.txt`.
+
+### Request flow
+
+The front-end is served as static files by the same FastAPI app, so there is no
+CORS surface. API routes are registered first and take priority; anything that
+doesn't match falls through to the static mount.
+
+```
+browser ──► /api/health
+        └─► /api/{auth,exercises,workouts,routines,folders,measurements,data}/…
+                     │
+                     ├─ public:    /api/auth/{register,login,refresh}
+                     └─ protected: everything else
+                                   └─ Depends(get_current_user)  ← backend/app/deps.py
+                                      verifies the Bearer access token,
+                                      loads the matching non-deleted user
+```
+
+### Data model
+
+Six tables: `users`, `exercises`, `workouts`, `routines`, `folders`,
+`measurement_entries`. Shared conventions on every table:
+
+- **UUID primary keys** — a client can mint an id offline without a round trip.
+- **`created_at` / `updated_at`** timestamps.
+- **`deleted_at`** — soft delete everywhere; nothing is hard-deleted by a request.
+
+A workout's or routine's body is a single **JSONB `content` blob**
+(`{"exercises": [{ "sets": [...] }]}`), re-saved wholesale on each edit rather
+than stored as child set rows — one small write instead of many upserts, and the
+data volume is tiny.
+
+Integrity guards:
+
+- Partial unique indexes: **one active workout per user**, **one default folder
+  per user**.
+- `CHECK` constraints on `workouts.status`, `exercises.tracking_type`, and
+  non-negative `rest_seconds`.
+- `workouts.content_version` provides **optimistic concurrency**: a save carrying
+  a stale version gets `409 Conflict` with the current server copy, rather than
+  silently overwriting another device's edits.
+
+### Schema migrations
+
+The schema is versioned in `backend/alembic/versions/`. `alembic upgrade head`
+runs as the first half of the api container's command (see `backend/Dockerfile`),
+before Uvicorn starts — so a fresh database is built entirely from the migrations
+and an existing one is upgraded in place. Changing a column never requires
+wiping data.
+
+### Front-end notes
+
+- `authFetch()` wraps `fetch` with the access token, retries once through
+  `/api/auth/refresh` on a `401`, and raises a `TransientNetworkError` (rather
+  than logging out) when the server is merely unreachable.
+- A `localStorage` write-ahead log mirrors unsaved workout edits and retries the
+  save with backoff, so a dropped connection or a closed tab never loses sets.
+- `showView()` switches between mutually exclusive top-level screens.
+- Progress charts are hand-built inline SVG. Autocomplete is a small custom
+  widget (`<datalist>` is unreliable on iOS Safari).
+- `manifest.webmanifest` + theme-color meta tags make it installable
+  ("Add to Home Screen").
+
+### Deployment
+
+`docker-compose.yml` runs three services:
+
+| Service | Image / build | Role |
+| --- | --- | --- |
+| `db` | `postgres:16.6` | database; named volume `workout_db_data`; `pg_isready` healthcheck |
+| `api` | built from `backend/` | migrations + Uvicorn; `/api/health` healthcheck (runs a real `SELECT 1`) |
+| `db-backup` | `postgres:16.6` | `pg_dump` once a day into `./backups/`, 14-day retention |
+
+---
+
+## Design decisions
+
+- **No front-end framework, on purpose.** The UI is small and long-lived; plain
+  DOM code has no build step, no dependency churn, and nothing to keep patched.
+- **The API serves the front-end.** One origin, no CORS config. If a separate
+  PWA build is ever needed it can become its own service.
+- **JSONB `content` blob, not child tables.** The editor re-sends the whole
+  workout on every keystroke-debounced save; a blob makes that one row write.
+- **Soft delete + Trash everywhere.** `deleted_at` on every table; a background
+  purge removes rows older than 30 days on startup.
+- **One shared exercise library.** `is_custom` / `created_by` record provenance;
+  `source_id` (the free-exercise-db slug) lets the seed re-run without
+  duplicating.
+- **Sync-friendly columns, no sync engine yet.** UUIDs, `updated_at`,
+  `deleted_at` are in place for a future offline client; today concurrent edits
+  are last-write-wins, moderated by `content_version`.
+- **Tokens in `localStorage`.** Convenient and acceptable on a private network;
+  move the refresh token to an httpOnly cookie before any wider exposure.
+
+---
+
+## Project layout
 
 ```
 workout-app/
-├── docker-compose.yml      # runs Postgres + the API together
-├── .env.example            # copy to .env and fill in your values
-├── backend/
-│   ├── Dockerfile
-│   ├── requirements.txt    # Python dependencies
-│   ├── app/
-│   │   ├── config.py       # settings read from environment variables
-│   │   ├── database.py     # database connection + session handling
-│   │   ├── models.py       # the `users`, `exercises`, `workouts` tables
-│   │   ├── schemas.py      # request/response shapes (validation)
-│   │   ├── security.py     # argon2 password hashing + JWT tokens
-│   │   ├── deps.py         # get_current_user (protects private routes)
-│   │   ├── seed.py         # loads the exercise library on startup
-│   │   ├── main.py         # app startup + wiring
-│   │   ├── data/
-│   │   │   └── exercises.json   # vendored free-exercise-db snapshot (public domain)
-│   │   └── routers/
-│   │       ├── auth.py     # /register, /login, /refresh, /me
-│   │       ├── exercises.py    # GET/POST /api/exercises
-│   │       └── workouts.py     # start / resume / edit / finish / discard a workout
-│   └── static/             # the web UI (served by the API for now)
-│       ├── index.html
-│       ├── style.css
-│       └── app.js
+├── docker-compose.yml         # db + api + db-backup
+├── Makefile                   # up / down / backup / restore / migrate / revision / test
+├── .env.example               # copy to .env
+├── scripts/
+│   ├── backup.sh              # on-demand pg_dump into ./backups/
+│   └── restore.sh             # pg_restore from a dump
+└── backend/
+    ├── Dockerfile             # runs `alembic upgrade head` then uvicorn
+    ├── requirements.txt       # pinned runtime dependencies
+    ├── requirements-dev.txt   # pytest + httpx
+    ├── pytest.ini
+    ├── alembic.ini
+    ├── alembic/
+    │   ├── env.py
+    │   └── versions/          # 0001_baseline … 0004_check_constraints
+    ├── app/
+    │   ├── config.py          # settings from environment variables
+    │   ├── database.py        # engine + session factory
+    │   ├── models.py          # the 6 SQLAlchemy tables
+    │   ├── schemas.py         # Pydantic request/response shapes
+    │   ├── security.py        # argon2 hashing + JWT create/verify
+    │   ├── deps.py            # get_current_user
+    │   ├── seed.py            # loads the exercise library on first boot
+    │   ├── main.py            # app assembly, /api/health, startup tasks
+    │   ├── data/exercises.json   # vendored free-exercise-db snapshot (public domain)
+    │   └── routers/
+    │       ├── auth.py           # register / login / refresh / me / password / delete
+    │       ├── exercises.py      # library list + custom create + per-exercise stats
+    │       ├── workouts.py       # start / resume / edit / finish / discard / history / trash
+    │       ├── routines.py       # CRUD + reorder
+    │       ├── folders.py        # CRUD + reorder + default folder
+    │       ├── measurements.py   # CRUD + photos + trash
+    │       └── data.py           # full-account JSON export / import
+    ├── static/                # index.html, style.css, app.js, manifest.webmanifest
+    └── tests/                 # pytest suite (needs a throwaway Postgres)
 ```
 
-Every Python file is heavily commented so you can read and change it.
-
 ---
 
-## Prerequisites
+## Running it
 
-- **Docker Desktop** (includes `docker compose`). That's all you need — Python and
-  Postgres run inside the containers, so you don't have to install them yourself.
+**Prerequisite:** Docker Desktop (bundles `docker compose`). Python and Postgres
+run inside the containers.
 
----
-
-## Run it
-
-1. Create your config file and edit the values (especially the secrets):
+1. Create the config file and set the secrets:
 
    ```bash
    cp .env.example .env
-   ```
-
-   Generate a good `JWT_SECRET` with:
-
-   ```bash
+   # generate a strong signing key:
    python -c "import secrets; print(secrets.token_urlsafe(64))"
+   # paste it as JWT_SECRET in .env, and set a real POSTGRES_PASSWORD
    ```
 
-   (No Python installed? Any long random string works for local testing.)
-
-2. Build and start everything:
+2. Build and start:
 
    ```bash
    docker compose up --build
    ```
 
-   The first run downloads images and installs dependencies, so give it a minute.
+3. Open **http://localhost:8000**. Interactive API docs are at **/docs**.
 
-3. Open **http://localhost:8000** in your browser.
+Stop with `Ctrl-C`, then `docker compose down`.
 
-To stop: press `Ctrl-C`, then `docker compose down`.
-
-> **Do not run `docker compose down -v`.** The `-v` flag deletes the database
-> volume — every account, workout, and measurement. Schema changes are handled
-> by migrations now (see below), so you never need it. If you truly mean to wipe
-> and start over, run `make backup` first.
+> **Do not run `docker compose down -v`.** `-v` deletes the database volume —
+> every account, workout, and measurement. Schema changes are handled by
+> migrations, so you never need it. If you really mean to wipe and start over,
+> run `make backup` first.
 
 ---
 
-## Reliability & operations
+## Operations
 
-### Schema migrations (Alembic)
+### Migrations
 
-The database schema is versioned in `backend/alembic/versions/`. On every
-`docker compose up`, the api container runs `alembic upgrade head` before
-starting (it's the first half of the container's command in `backend/Dockerfile`),
-so a fresh database is built from the migrations and an existing one is brought
-up to date automatically. Adding a column no longer means wiping data.
-
-- **Fresh install:** nothing to do — `up` creates everything.
-- **Existing database from before migrations existed:** run this once so Alembic
-  records the current schema as the baseline, then let it upgrade:
+- **Fresh install** — nothing to do; `docker compose up` builds the schema from
+  the migrations.
+- **A database that predates migrations** — record the current schema as the
+  baseline once, then upgrade:
 
   ```bash
   docker compose run --rm api alembic stamp 0001
   docker compose up --build
   ```
 
-- **Add a migration** after changing `models.py`:
+- **Add a migration** after editing `backend/app/models.py`:
 
   ```bash
   make revision M="add whatever column"
@@ -125,140 +262,78 @@ up to date automatically. Adding a column no longer means wiping data.
 
 ### Backups
 
-An automatic `db-backup` container runs `pg_dump` once a day into `./backups/`
-(kept 14 days). Take an immediate one before anything risky:
+The `db-backup` service writes a `pg_dump` into `./backups/` once a day and keeps
+14 days. Take one on demand before anything risky:
 
 ```bash
 make backup
 ```
 
-Restore from a dump (this replaces current data; it stops the api first):
+Restore from a dump (replaces current data; stops the api first):
 
 ```bash
 make restore FILE=backups/workout-2026-08-28-1200.dump
 ```
 
-Keep a copy of `.env` somewhere safe too — losing `JWT_SECRET` doesn't lose data
-but logs everyone out.
+Keep a copy of `.env` somewhere safe — losing `JWT_SECRET` doesn't lose data, but
+it invalidates every existing session.
 
-### Upgrading Postgres
+### Upgrading PostgreSQL
 
 The image is pinned (`postgres:16.6`). Patch bumps within 16.x are drop-in. A
-**major** bump (17, 18, …) is **not** — the on-disk data format changes. To do it:
-`make backup`, change the tag, `docker compose down`, delete the volume, `up`,
-then `make restore FILE=…`.
+**major** bump (17+) changes the on-disk format: `make backup`, change the tag,
+`docker compose down`, delete the volume, `docker compose up`, then
+`make restore FILE=…`.
 
-### Tests
+### Sanity checks
+
+```bash
+# finished workouts and how many exercises each has
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+  -c "select status, started_at, finished_at, jsonb_array_length(content->'exercises') as exercises from workouts;"
+
+# library size, and whether any custom exercises exist
+docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+  -c "select count(*), bool_or(is_custom) from exercises;"
+```
+
+---
+
+## Testing
+
+The suite runs against a **real, throwaway** PostgreSQL (never your live
+database). It builds the schema by running the migrations, then exercises the API
+through `fastapi.testclient`.
 
 ```bash
 cd backend
 pip install -r requirements.txt -r requirements-dev.txt
+
 DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/workout_test \
-  JWT_SECRET=test python -m pytest
+JWT_SECRET=test \
+  python -m pytest
 ```
 
-CI (`.github/workflows/ci.yml`) runs the suite against a throwaway Postgres,
-applies the migrations, byte-compiles the backend, and syntax-checks `app.js` on
-every push.
+Coverage: auth round-trip and email normalisation, the workout lifecycle plus the
+`409` optimistic-concurrency path, `previous` / `stats` math (Epley 1RM, session
+volume, per-mode aggregates), the one-default-folder invariant, measurement CRUD
+with photos, and JSON export → import into a fresh account.
 
 ---
 
-## Test that it works
+## Configuration reference
 
-1. Click **Create account**, enter a name, email, and a password (8+ characters),
-   and submit. You should land on **"Signed in as ..."**.
-2. Refresh the page — you should stay signed in (the token was saved).
-3. Click **Log out**, then **Log in** with the same email and password.
-4. Try logging in with a wrong password — you should see *"Incorrect email or
-   password."*
+Environment variables (compose reads `.env` automatically):
 
-### Exercises (milestone 2)
+| Variable | Required | Default | Notes |
+| --- | --- | --- | --- |
+| `POSTGRES_USER` | yes | — | compose only; used to create the DB role |
+| `POSTGRES_PASSWORD` | yes | — | compose only |
+| `POSTGRES_DB` | yes | — | compose only |
+| `DATABASE_URL` | yes | assembled by compose | `postgresql+psycopg2://user:pass@db:5432/name` |
+| `JWT_SECRET` | yes | — | long random string; signs all tokens |
+| `JWT_ALGORITHM` | no | `HS256` | |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | no | `15` | |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | no | `90` | |
 
-1. After logging in you land on the home screen. Click **Exercises**.
-2. The list fills with the seeded library. Type in the search box to filter by
-   name (e.g. `squat`).
-3. Expand **Add an exercise**, enter a name (the other fields are optional), and
-   submit. The list refreshes with your new exercise, tagged **custom**.
-4. Log in as a different account and open **Exercises** — the custom exercise is
-   there too, because the library is shared.
-
-### Workouts (milestone 3)
-
-1. On the home screen click **Start empty workout**. The workout screen opens and
-   **Duration** starts counting up.
-2. Tap **+ Add Exercise**, search the library, and pick one. It appears with a
-   single empty set row.
-3. Type a weight and reps, then tick the ✓ — **Volume** and **Sets** update. Add
-   more sets with **+ Add Set**; jot something in the notes box.
-4. Reload the page. The workout comes back exactly as you left it, and Duration
-   keeps counting from the real start time. (Open a different browser, log in as
-   the same user, and **Resume workout** shows the same session.)
-5. **Finish** returns you home. **Discard Workout** (after a confirm) throws the
-   session away instead.
-
-To confirm a finished workout landed in Postgres:
-
-```bash
-docker compose exec db psql -U workout -d workout -c "select status, started_at, finished_at, jsonb_array_length(content->'exercises') as exercises from workouts;"
-```
-
-You can also poke the API directly through its auto-generated docs at
-**http://localhost:8000/docs**.
-
-To confirm the library landed in Postgres:
-
-```bash
-docker compose exec db psql -U workout -d workout -c "select count(*), bool_or(is_custom) from exercises;"
-```
-
-To confirm the data really landed in Postgres:
-
-```bash
-docker compose exec db psql -U workout -d workout -c "select email, display_name, created_at from users;"
-```
-
-(Use whatever `POSTGRES_USER` / `POSTGRES_DB` you set in `.env`.)
-
----
-
-## Notes on a few decisions (so nothing is a surprise later)
-
-- **Front-end is served by the API** for now, which avoids CORS while we're small.
-  When we build the full app UI (a PWA), it will likely become its own service.
-- **Schema changes are Alembic migrations**, applied automatically on startup
-  (the api container runs `alembic upgrade head` before uvicorn). See
-  "Reliability & operations" above.
-- **Tokens live in `localStorage`** for now — convenient and fine on your private
-  network. We can harden this (httpOnly refresh cookie) before wider exposure.
-- **Sync-friendly columns** (`updated_at`, `deleted_at`, UUID ids) are on every
-  table (`users`, `exercises`, `workouts`); the actual sync endpoint comes later,
-  once the basics exist.
-- **A workout's contents live in one JSONB `content` blob**, not child tables.
-  The client re-saves the whole workout on every edit during a session — a blob
-  makes that one small write instead of many set-row upserts, and the data is
-  tiny. A partial unique index enforces at most one `active` workout per user.
-- **The in-progress workout is server-side state.** Every edit `PUT`s to
-  `/api/workouts/active`, so closing the tab or switching devices loses nothing.
-  `Finish` just flips `status` to `finished`; the row stays as history.
-- **The exercise library is one shared table**, not per-user. A custom exercise
-  one person adds is visible to everyone. `is_custom` and `created_by` mark where
-  a row came from; `source_id` (the free-exercise-db slug) lets the startup seed
-  run again without making duplicates.
-- **The seed data is vendored** at `backend/app/data/exercises.json` so seeding
-  needs no network access and builds are reproducible. Refresh it later by
-  re-downloading from the free-exercise-db repo.
-- **Units / images** aren't part of these milestones. Weight/distance will be
-  stored in canonical units (kg / meters / seconds) and displayed in your
-  preferred units when we build set logging; exercise images come later,
-  downloadable for offline.
-
----
-
-## Next milestone
-
-One of:
-- **Workout history**: a screen listing finished workouts, and using the last
-  time you did an exercise to fill the "previous" hint on each set row.
-- **Routines**: a `routines` table (a named, ordered list of exercises),
-  endpoints to create and list them, and wiring the home screen's **New Routine**
-  button and routine list to real data.
+The optional four are read by `backend/app/config.py`; the rest live in `.env`.
