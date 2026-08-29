@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=37" />
+  <link rel="stylesheet" href="/style.css?v=38" />
 </head>
 <body>
   <main class="card">
@@ -459,9 +459,22 @@
     </div>
   </div>
 
+  <!-- App-styled confirm / prompt (replaces window.confirm / window.prompt). -->
+  <div id="confirm-dialog" class="modal" hidden>
+    <div class="modal-box">
+      <h3 id="confirm-title" class="modal-title"></h3>
+      <p id="confirm-body" class="modal-body"></p>
+      <input id="confirm-input" class="modal-input" type="text" autocomplete="off" hidden />
+      <div class="modal-actions">
+        <button id="confirm-cancel" class="ghost" type="button">Cancel</button>
+        <button id="confirm-ok" class="submit" type="button">OK</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=37"></script>
+  <script src="/app.js?v=38"></script>
 </body>
 </html>

@@ -366,6 +366,74 @@ function closeOverlay(el) {
   el._ovTimer = setTimeout(finish, 280);   // fallback: reduced motion / missed event
 }
 
+// --- App-styled confirm / prompt (replaces window.confirm / window.prompt) ---
+const confirmDialogEl = document.getElementById("confirm-dialog");
+const confirmTitleEl = document.getElementById("confirm-title");
+const confirmBodyEl = document.getElementById("confirm-body");
+const confirmInputEl = document.getElementById("confirm-input");
+const confirmOkBtn = document.getElementById("confirm-ok");
+const confirmCancelBtn = document.getElementById("confirm-cancel");
+let confirmResolve = null;
+
+// appConfirm({title, body, confirmLabel, cancelLabel, danger, prompt})
+//   -> Promise. Without `prompt`: resolves true / false.
+//      With `prompt: {value, placeholder}`: resolves the trimmed string, or null.
+function appConfirm({
+  title,
+  body = "",
+  confirmLabel = "OK",
+  cancelLabel = "Cancel",
+  danger = false,
+  prompt = null,
+} = {}) {
+  return new Promise((resolve) => {
+    confirmResolve = resolve;
+    confirmTitleEl.textContent = title || "";
+    confirmBodyEl.textContent = body;
+    confirmOkBtn.textContent = confirmLabel;
+    confirmCancelBtn.textContent = cancelLabel;
+    confirmOkBtn.classList.toggle("btn-danger", danger);
+    confirmOkBtn.classList.toggle("submit", !danger);
+
+    if (prompt) {
+      confirmInputEl.hidden = false;
+      confirmInputEl.value = prompt.value || "";
+      confirmInputEl.placeholder = prompt.placeholder || "";
+    } else {
+      confirmInputEl.hidden = true;
+      confirmInputEl.value = "";
+    }
+
+    openOverlay(confirmDialogEl);
+    setTimeout(() => (prompt ? confirmInputEl : confirmOkBtn).focus(), 50);
+  });
+}
+
+function resolveConfirm(value) {
+  if (!confirmResolve) return;
+  const done = confirmResolve;
+  confirmResolve = null;
+  closeOverlay(confirmDialogEl);
+  done(value);
+}
+
+confirmOkBtn.addEventListener("click", () => {
+  resolveConfirm(confirmInputEl.hidden ? true : confirmInputEl.value.trim());
+});
+confirmCancelBtn.addEventListener("click", () => {
+  resolveConfirm(confirmInputEl.hidden ? false : null);
+});
+confirmDialogEl.addEventListener("click", (e) => {
+  if (e.target === confirmDialogEl) resolveConfirm(confirmInputEl.hidden ? false : null);
+});
+document.addEventListener("keydown", (e) => {
+  if (confirmDialogEl.hidden) return;
+  if (e.key === "Escape") resolveConfirm(confirmInputEl.hidden ? false : null);
+  else if (e.key === "Enter" && !confirmInputEl.hidden) {
+    resolveConfirm(confirmInputEl.value.trim());
+  }
+});
+
 function showLoggedIn(user) {
   currentUser = user;
   editMode = false;
@@ -979,9 +1047,12 @@ function renderExerciseDetail(ex, body, stats) {
     del.className = "link-danger";
     del.textContent = "Delete";
     del.addEventListener("click", async () => {
-      if (!confirm(
-        "Delete this custom exercise? It's removed from the library and from any routines that use it."
-      )) return;
+      if (!(await appConfirm({
+        title: "Delete exercise?",
+        body: "Removed from the library and from any routines that use it.",
+        confirmLabel: "Delete",
+        danger: true,
+      }))) return;
       try {
         const res = await authFetch(`${EXERCISES_API}/${ex.id}`, { method: "DELETE" });
         if (res.status !== 204 && res.status !== 404) {
@@ -1085,7 +1156,12 @@ function renderExerciseDetail(ex, body, stats) {
     del.textContent = "✕";
     del.setAttribute("aria-label", "Delete this workout");
     del.addEventListener("click", async () => {
-      if (!confirm("Delete this workout? It's removed from history everywhere.")) return;
+      if (!(await appConfirm({
+        title: "Delete workout?",
+        body: "It's removed from your history everywhere.",
+        confirmLabel: "Delete",
+        danger: true,
+      }))) return;
       try {
         const res = await authFetch(`${WORKOUTS_API}/${s.workout_id}`, { method: "DELETE" });
         if (res.status !== 204 && res.status !== 404) return;
@@ -1542,17 +1618,16 @@ function buildExerciseBlock(entry, exIndex) {
     return block;
   }
 
+  // All sets done: tapping the header row (name / blank space, not the ▲ ▼ Remove
+  // controls) folds the block. Unfinished exercises don't collapse -- that would
+  // hide sets you're still working.
   if (allDone) {
-    const fold = document.createElement("button");
-    fold.type = "button";
-    fold.className = "workout-exercise-fold";
-    fold.textContent = "▾";
-    fold.setAttribute("aria-label", "Collapse exercise");
-    fold.addEventListener("click", () => {
+    head.classList.add("workout-exercise-head--tappable");
+    head.addEventListener("click", (e) => {
+      if (e.target.closest(".workout-exercise-controls")) return;
       entry.done_collapsed = true;
       renderWorkout();
     });
-    controls.insertBefore(fold, moves[0]);
   }
 
   const notes = document.createElement("textarea");
@@ -2248,11 +2323,12 @@ async function maybeSyncRoutineFromWorkout() {
   const rEx = (routine.content && routine.content.exercises) || [];
   if (!routineStructureChanged(wEx, rEx)) return;
 
-  const ok = confirm(
-    "You changed the exercises in this workout.\n\n" +
-    `Update the routine "${routine.name}" with these changes for future workouts?\n\n` +
-    "OK — update the routine\nCancel — keep the routine as it was"
-  );
+  const ok = await appConfirm({
+    title: "Update routine?",
+    body: `You changed the exercises in this workout. Update "${routine.name}" for future workouts?`,
+    confirmLabel: "Update routine",
+    cancelLabel: "Keep original",
+  });
   if (!ok) return;
 
   const content = {
@@ -2289,7 +2365,12 @@ async function maybeSyncRoutineFromWorkout() {
 }
 
 workoutDiscardBtn.addEventListener("click", async () => {
-  if (!confirm("Discard this workout? This can't be undone.")) return;
+  if (!(await appConfirm({
+    title: "Discard workout?",
+    body: "This can't be undone.",
+    confirmLabel: "Discard",
+    danger: true,
+  }))) return;
   workoutDiscardBtn.disabled = true;
   try {
     const res = await authFetch(WORKOUTS_API + "/active", { method: "DELETE" });
@@ -2361,7 +2442,11 @@ async function toggleFolder(folder) {
 }
 
 newFolderBtn.addEventListener("click", async () => {
-  const name = (prompt("New folder name") || "").trim();
+  const name = (await appConfirm({
+    title: "New folder",
+    confirmLabel: "Create",
+    prompt: { placeholder: "Folder name" },
+  })) || "";
   if (!name) return;
   try {
     const res = await authFetch(FOLDERS_API, {
@@ -2376,7 +2461,11 @@ newFolderBtn.addEventListener("click", async () => {
 });
 
 async function renameFolder(folder) {
-  const name = (prompt("Rename folder", folder.name) || "").trim();
+  const name = (await appConfirm({
+    title: "Rename folder",
+    confirmLabel: "Rename",
+    prompt: { value: folder.name },
+  })) || "";
   if (!name || name === folder.name) return;
   try {
     const res = await authFetch(`${FOLDERS_API}/${folder.id}`, {
@@ -2391,7 +2480,12 @@ async function renameFolder(folder) {
 }
 
 async function deleteFolder(folder) {
-  if (!confirm(`Delete folder "${folder.name}"? Its routines move to My Routines.`)) return;
+  if (!(await appConfirm({
+    title: `Delete "${folder.name}"?`,
+    body: "Its routines move to My Routines.",
+    confirmLabel: "Delete",
+    danger: true,
+  }))) return;
   try {
     const res = await authFetch(`${FOLDERS_API}/${folder.id}`, { method: "DELETE" });
     if (res.status === 204) await loadRoutines();
@@ -2453,7 +2547,11 @@ editRoutinesBtn.addEventListener("click", () => {
 // Start (or resume) a workout from a routine.
 async function startRoutine(routine) {
   if (activeWorkout) {
-    if (!confirm("You have a workout in progress — open that one instead?")) return;
+    if (!(await appConfirm({
+      title: "Workout in progress",
+      body: "Open the one you already have going?",
+      confirmLabel: "Open workout",
+    }))) return;
     openWorkout();
     return;
   }
@@ -2698,7 +2796,11 @@ routineSaveBtn.addEventListener("click", async () => {
 
 routineDeleteBtn.addEventListener("click", async () => {
   if (!editingRoutine || !editingRoutine.id) return;
-  if (!confirm(`Delete routine "${editingRoutine.name}"?`)) return;
+  if (!(await appConfirm({
+    title: `Delete "${editingRoutine.name}"?`,
+    confirmLabel: "Delete",
+    danger: true,
+  }))) return;
   routineDeleteBtn.disabled = true;
   try {
     const res = await authFetch(`${ROUTINES_API}/${editingRoutine.id}`, {
@@ -2714,14 +2816,18 @@ routineDeleteBtn.addEventListener("click", async () => {
   }
 });
 
-routineBackBtn.addEventListener("click", () => {
+routineBackBtn.addEventListener("click", async () => {
   if (!editingRoutine) {
     closeRoutineEditor();
     return;
   }
   editingRoutine.name = routineNameInput.value;
   const dirty = JSON.stringify(editingRoutine) !== originalRoutineJSON;
-  if (dirty && !confirm("Discard changes to this routine?")) return;
+  if (dirty && !(await appConfirm({
+    title: "Discard changes?",
+    confirmLabel: "Discard",
+    danger: true,
+  }))) return;
   closeRoutineEditor();
 });
 
@@ -2830,7 +2936,11 @@ function renderHistoryList(items) {
 // Start a fresh workout from a past one.
 async function repeatWorkout(workoutId) {
   if (activeWorkout) {
-    if (!confirm("You have a workout in progress — open that one instead?")) return;
+    if (!(await appConfirm({
+      title: "Workout in progress",
+      body: "Open the one you already have going?",
+      confirmLabel: "Open workout",
+    }))) return;
     openWorkout();
     return;
   }
@@ -2875,7 +2985,12 @@ async function openHistoryDetail(id) {
 
 historyDetailDeleteBtn.addEventListener("click", async () => {
   if (!historyDetailId) return;
-  if (!confirm("Delete this workout? It's removed from history everywhere.")) return;
+  if (!(await appConfirm({
+    title: "Delete workout?",
+    body: "It's removed from your history everywhere.",
+    confirmLabel: "Delete",
+    danger: true,
+  }))) return;
   const deletedId = historyDetailId;
   const cameFrom = historyDetailFrom;
   historyDetailDeleteBtn.disabled = true;
@@ -3513,7 +3628,11 @@ measurementForm.addEventListener("submit", async (event) => {
 
 measurementDeleteBtn.addEventListener("click", async () => {
   if (!measurementEditId) return;
-  if (!confirm("Delete this measurement entry?")) return;
+  if (!(await appConfirm({
+    title: "Delete entry?",
+    confirmLabel: "Delete",
+    danger: true,
+  }))) return;
   const deletedId = measurementEditId;
   measurementDeleteBtn.disabled = true;
   try {
@@ -3760,7 +3879,12 @@ setDeleteEmailInput.addEventListener("input", () => {
 });
 
 settingsDeleteBtn.addEventListener("click", async () => {
-  if (!confirm("Delete your account? This cannot be undone.")) return;
+  if (!(await appConfirm({
+    title: "Delete account?",
+    body: "This cannot be undone.",
+    confirmLabel: "Delete",
+    danger: true,
+  }))) return;
   settingsDeleteBtn.disabled = true;
   try {
     const res = await authFetch(API + "/me", { method: "DELETE" });

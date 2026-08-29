@@ -814,23 +814,14 @@ button.settings-section { width: 100%; }
   gap: 6px;
   flex-shrink: 0;
 }
-.workout-exercise-controls .routine-move,
-.workout-exercise-fold {
+.workout-exercise-controls .routine-move {
   width: 30px;
   height: 28px;
   line-height: 1;
 }
-.workout-exercise-fold {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface-2);
-  color: var(--muted);
-  font-size: 13px;
-  cursor: pointer;
-}
-.workout-exercise-fold:hover { border-color: var(--accent); }
 
-/* An exercise whose sets are all checked -- folded to one line. */
+/* An exercise whose sets are all checked -- tap the header row to fold it. */
+.workout-exercise-head--tappable,
 .workout-exercise--collapsed .workout-exercise-head { cursor: pointer; }
 .workout-exercise--collapsed .workout-exercise-name { color: var(--text); }
 .workout-exercise-summary {
@@ -1305,6 +1296,59 @@ button.calendar-day { margin: 0; appearance: none; cursor: pointer; }
 .day-picker-time { color: var(--muted); font-weight: 500; font-size: 12px; }
 .day-picker-box .ghost { margin-top: 0; }
 
+/* Generic in-app confirm / prompt dialog (replaces window.confirm/prompt) */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.6);
+}
+.modal-box {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 22px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.modal-title { margin: 0; font-size: 16px; font-weight: 700; }
+.modal-body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.modal-body:empty { display: none; }
+.modal-input {
+  width: 100%;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 16px;   /* >= 16px so iOS Safari doesn't zoom in on focus */
+  font-family: inherit;
+}
+.modal-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.25);
+}
+.modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}
+.modal-actions .ghost { margin-top: 0; }
+
 /* --- Measurements page --- */
 .measurements-chart { min-height: 130px; margin-bottom: 10px; }
 .measurement-empty { margin: 0; padding: 40px 8px; text-align: center; color: var(--muted); font-size: 13px; }
@@ -1527,9 +1571,11 @@ button.calendar-day { margin: 0; appearance: none; cursor: pointer; }
 
 .rest-editor.overlay-in .rest-editor-box,
 .day-picker.overlay-in .day-picker-box,
+.modal.overlay-in .modal-box,
 .measurement-photo-viewer.overlay-in img { animation: sheetIn 190ms ease-out; }
 .rest-editor.overlay-out .rest-editor-box,
 .day-picker.overlay-out .day-picker-box,
+.modal.overlay-out .modal-box,
 .measurement-photo-viewer.overlay-out img { animation: sheetOut 150ms ease-in both; }
 
 .side-menu.overlay-in .side-menu-panel  { animation: panelIn 200ms ease-out; }
@@ -1541,7 +1587,7 @@ button.calendar-day { margin: 0; appearance: none; cursor: pointer; }
 .routine-name-btn, .routine-move, .routine-menu, .folder-edit-btn,
 .history-row-main, .history-row-repeat, .exercise-pick, .side-menu-item,
 .day-picker-item, .measurement-chip, .rest-adjust, .rest-skip,
-.rest-editor-step, .workout-exercise-fold, .toast-action,
+.rest-editor-step, .toast-action, .modal-actions .ghost, .modal-actions .submit,
 .set-remove, button.calendar-day {
   transition: transform 90ms ease, background-color 120ms ease,
               border-color 120ms ease, color 120ms ease, opacity 120ms ease;
@@ -1553,8 +1599,8 @@ button.calendar-day { margin: 0; appearance: none; cursor: pointer; }
 .history-row-main:active, .history-row-repeat:active, .exercise-pick:active,
 .side-menu-item:active, .day-picker-item:active, .measurement-chip:active,
 .rest-adjust:active, .rest-skip:active,
-.rest-editor-step:not(:disabled):active, .workout-exercise-fold:active,
-.toast-action:active, button.calendar-day:active {
+.rest-editor-step:not(:disabled):active,
+.toast-action:active, .modal-actions button:active, button.calendar-day:active {
   transform: scale(0.96);
 }
 
