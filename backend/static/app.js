@@ -584,13 +584,44 @@ function closeExercises() {
 exercisesBtn.addEventListener("click", () => openExercises());
 exercisesBack.addEventListener("click", closeExercises);
 
-exerciseAddBtn.addEventListener("click", () => {
+// null = creating a new exercise; a uuid = editing that custom exercise.
+let editingExerciseId = null;
+
+// Open the shared create/edit form. Pass an exercise to edit it, or nothing to
+// add a new one.
+function openExerciseEditor(ex = null) {
   addExerciseForm.reset();
   addExerciseMessage.textContent = "";
+  editingExerciseId = ex ? ex.id : null;
+
+  const title = document.getElementById("exercise-create-title");
+  if (ex) {
+    document.getElementById("ex-name").value = ex.name || "";
+    document.getElementById("ex-tracking").value =
+      TRACKING[ex.tracking_type] ? ex.tracking_type : "weight_reps";
+    document.getElementById("ex-category").value = ex.category || "";
+    document.getElementById("ex-equipment").value = ex.equipment || "";
+    document.getElementById("ex-muscles").value = (ex.primary_muscles || []).join(", ");
+    document.getElementById("ex-secondary-muscles").value =
+      (ex.secondary_muscles || []).join(", ");
+    document.getElementById("ex-instructions").value =
+      (ex.instructions || []).join("\n");
+    title.textContent = "Edit exercise";
+    addExerciseSubmit.textContent = "Save changes";
+  } else {
+    title.textContent = "New exercise";
+    addExerciseSubmit.textContent = "Save exercise";
+  }
+
   showView(exerciseCreateView);
   document.getElementById("ex-name").focus();
+}
+
+exerciseAddBtn.addEventListener("click", () => openExerciseEditor(null));
+exerciseCreateBackBtn.addEventListener("click", () => {
+  editingExerciseId = null;
+  showView(exercisesView);
 });
-exerciseCreateBackBtn.addEventListener("click", () => showView(exercisesView));
 
 // The whole library, loaded once; search + filters run client-side over it.
 let allExercises = [];
@@ -696,6 +727,7 @@ function attachSuggest(input, getOptions, { multi = false } = {}) {
 attachSuggest(document.getElementById("ex-category"), () => categoryOptions);
 attachSuggest(document.getElementById("ex-equipment"), () => equipmentOptions);
 attachSuggest(document.getElementById("ex-muscles"), () => muscleOptions, { multi: true });
+attachSuggest(document.getElementById("ex-secondary-muscles"), () => muscleOptions, { multi: true });
 
 function fillOptions(sel, allLabel, values) {
   const keep = sel.value;
@@ -841,6 +873,46 @@ function statTile(label, value) {
 
 function renderExerciseDetail(ex, body, stats) {
   body.replaceChildren();
+
+  // Custom exercises can be edited or deleted by anyone (the library is shared);
+  // seeded library rows are read-only. Shown even with no history yet.
+  if (ex.is_custom) {
+    const actions = document.createElement("div");
+    actions.className = "exercise-detail-actions";
+
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "ghost";
+    edit.textContent = "Edit";
+    edit.addEventListener("click", () => openExerciseEditor(ex));
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "link-danger";
+    del.textContent = "Delete";
+    del.addEventListener("click", async () => {
+      if (!confirm(
+        "Delete this custom exercise? It's removed from the library and from any routines that use it."
+      )) return;
+      try {
+        const res = await authFetch(`${EXERCISES_API}/${ex.id}`, { method: "DELETE" });
+        if (res.status !== 204 && res.status !== 404) {
+          const data = await res.json().catch(() => ({}));
+          showToast(detailToText(data.detail) || "Could not delete the exercise.");
+          return;
+        }
+        exerciseStatsCache.delete(ex.id);
+        await loadExercises();
+        loadRoutines();
+        showToast("Exercise deleted");
+      } catch (err) {
+        /* ignore -- authFetch already handled a dead session */
+      }
+    });
+
+    actions.append(edit, del);
+    body.append(actions);
+  }
 
   if (!stats.performed_count) {
     const p = document.createElement("p");
@@ -1019,7 +1091,8 @@ filterMuscleSel.addEventListener("change", () => {
   applyExerciseFilters();
 });
 
-// Add a custom exercise, then refresh the list so it (and everyone else) sees it.
+// Create a new custom exercise, or save edits to an existing one. Either way the
+// list is reloaded so it (and everyone else) sees the change.
 addExerciseForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   addExerciseSubmit.disabled = true;
@@ -1033,6 +1106,9 @@ addExerciseForm.addEventListener("submit", async (event) => {
     return;
   }
 
+  const lowerList = (id) =>
+    splitList(document.getElementById(id).value, ",").map((m) => m.toLowerCase());
+
   // The taxonomy fields are lower-cased so custom entries line up with the
   // seeded library (which is all lower-case) and the filters don't fragment.
   const payload = {
@@ -1040,30 +1116,38 @@ addExerciseForm.addEventListener("submit", async (event) => {
     tracking_type: document.getElementById("ex-tracking").value,
     category: document.getElementById("ex-category").value.trim().toLowerCase() || null,
     equipment: document.getElementById("ex-equipment").value.trim().toLowerCase() || null,
-    primary_muscles: splitList(document.getElementById("ex-muscles").value, ",").map((m) =>
-      m.toLowerCase(),
-    ),
+    primary_muscles: lowerList("ex-muscles"),
+    secondary_muscles: lowerList("ex-secondary-muscles"),
     instructions: splitList(document.getElementById("ex-instructions").value, "\n"),
   };
 
+  const editing = editingExerciseId != null;
+
   try {
-    const res = await authFetch(EXERCISES_API, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const res = await authFetch(
+      editing ? `${EXERCISES_API}/${editingExerciseId}` : EXERCISES_API,
+      {
+        method: editing ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
       addExerciseMessage.textContent =
-        detailToText(data.detail) || "Could not add the exercise.";
+        detailToText(data.detail) ||
+        (editing ? "Could not save the exercise." : "Could not add the exercise.");
       return;
     }
 
+    if (editing) exerciseStatsCache.delete(editingExerciseId);
+    editingExerciseId = null;
     addExerciseForm.reset();
     showView(exercisesView);
-    await loadExercises();           // pick up the new exercise + refreshed filters
-    exerciseSearch.value = data.name;
+    await loadExercises();           // pick up the change + refreshed filters
+    if (editing) loadRoutines();     // routine displays may reference it
+    exerciseSearch.value = data.name || name;
     applyExerciseFilters();
   } catch (err) {
     addExerciseMessage.textContent = err.message || "Could not reach the server.";
@@ -2288,9 +2372,19 @@ function renderRoutineEditor() {
   });
 }
 
+// Swap the exercise at index i with its neighbour in the given direction.
+function moveRoutineExercise(i, dir) {
+  const arr = editingRoutine.content.exercises;
+  const j = i + dir;
+  if (j < 0 || j >= arr.length) return;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  renderRoutineEditor();
+}
+
 // Like buildExerciseBlock, but a template row: SET | LBS | REPS | remove,
-// no done checkbox, no notes, no stats.
+// no done checkbox, no notes, no stats. The head carries ▲ ▼ reorder controls.
 function buildRoutineExerciseBlock(entry, exIndex) {
+  const count = editingRoutine.content.exercises.length;
   const block = document.createElement("div");
   block.className = "workout-exercise";
 
@@ -2301,6 +2395,13 @@ function buildRoutineExerciseBlock(entry, exIndex) {
   name.className = "workout-exercise-name";
   name.textContent = entry.name;
 
+  const controls = document.createElement("div");
+  controls.className = "workout-exercise-controls";
+  controls.append(
+    moveBtn(-1, exIndex === 0, () => moveRoutineExercise(exIndex, -1)),
+    moveBtn(1, exIndex === count - 1, () => moveRoutineExercise(exIndex, 1)),
+  );
+
   const removeEx = document.createElement("button");
   removeEx.type = "button";
   removeEx.className = "link-danger";
@@ -2309,8 +2410,9 @@ function buildRoutineExerciseBlock(entry, exIndex) {
     editingRoutine.content.exercises.splice(exIndex, 1);
     renderRoutineEditor();
   });
+  controls.append(removeEx);
 
-  head.append(name, removeEx);
+  head.append(name, controls);
   block.append(head);
 
   const mode = trackingOf(entry);

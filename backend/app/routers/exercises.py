@@ -7,18 +7,19 @@ custom exercise one user adds is immediately visible to everyone else.
 """
 import uuid
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import get_current_user
-from ..models import Exercise, User, Workout
+from ..models import Exercise, Routine, User, Workout
 from ..schemas import (
     ExerciseCreate,
     ExercisePublic,
     ExerciseSessionStat,
     ExerciseStats,
+    ExerciseUpdate,
 )
 
 router = APIRouter(prefix="/api/exercises", tags=["exercises"])
@@ -155,6 +156,10 @@ def exercise_stats(
     return stats
 
 
+def _clean_list(items: list[str]) -> list[str]:
+    return [s.strip() for s in items if s.strip()]
+
+
 @router.post("", response_model=ExercisePublic, status_code=status.HTTP_201_CREATED)
 def create_exercise(
     body: ExerciseCreate,
@@ -167,8 +172,9 @@ def create_exercise(
         tracking_type=body.tracking_type,
         category=(body.category or None),
         equipment=(body.equipment or None),
-        primary_muscles=[m.strip() for m in body.primary_muscles if m.strip()],
-        instructions=[line.strip() for line in body.instructions if line.strip()],
+        primary_muscles=_clean_list(body.primary_muscles),
+        secondary_muscles=_clean_list(body.secondary_muscles),
+        instructions=_clean_list(body.instructions),
         is_custom=True,
         created_by=current_user.id,
     )
@@ -176,3 +182,78 @@ def create_exercise(
     db.commit()
     db.refresh(exercise)
     return exercise
+
+
+def _custom_exercise(db: Session, exercise_id: uuid.UUID) -> Exercise:
+    """Load a non-deleted exercise and require that it's user-added. Seeded
+    library rows (is_custom=False) are read-only for everyone."""
+    exercise = (
+        db.query(Exercise)
+        .filter(Exercise.id == exercise_id, Exercise.deleted_at.is_(None))
+        .first()
+    )
+    if exercise is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Exercise not found."
+        )
+    if not exercise.is_custom:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only custom exercises can be changed.",
+        )
+    return exercise
+
+
+@router.put("/{exercise_id}", response_model=ExercisePublic)
+def update_exercise(
+    exercise_id: uuid.UUID,
+    body: ExerciseUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Edit a custom exercise. Any signed-in user may edit any custom exercise --
+    the library is one shared table.
+
+    Note: changing `tracking_type` only affects future workouts and routine
+    entries. Existing workout `content` blobs keep their own per-entry snapshot,
+    but the /stats endpoint reads the live value, so past sessions of a re-typed
+    exercise are re-interpreted in the new mode -- expected when you deliberately
+    change it.
+    """
+    exercise = _custom_exercise(db, exercise_id)
+    exercise.name = body.name.strip()
+    exercise.tracking_type = body.tracking_type
+    exercise.category = body.category or None
+    exercise.equipment = body.equipment or None
+    exercise.primary_muscles = _clean_list(body.primary_muscles)
+    exercise.secondary_muscles = _clean_list(body.secondary_muscles)
+    exercise.instructions = _clean_list(body.instructions)
+    db.commit()
+    db.refresh(exercise)
+    return exercise
+
+
+@router.delete("/{exercise_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_exercise(
+    exercise_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Soft-delete a custom exercise and strip it out of every routine that used
+    it. Finished/active workouts are left as-is -- their entries carry their own
+    name + tracking snapshot and still render."""
+    exercise = _custom_exercise(db, exercise_id)
+    exercise.deleted_at = func.now()
+
+    target = str(exercise_id)
+    routines = (
+        db.query(Routine).filter(Routine.deleted_at.is_(None)).all()
+    )
+    for routine in routines:
+        entries = (routine.content or {}).get("exercises", [])
+        kept = [e for e in entries if str(e.get("exercise_id") or "") != target]
+        if len(kept) != len(entries):
+            routine.content = {**(routine.content or {}), "exercises": kept}
+
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=33" />
+  <link rel="stylesheet" href="/style.css?v=34" />
 </head>
 <body>
   <main class="card">
@@ -116,11 +116,12 @@
       <div id="exercise-list" class="exercise-list"></div>
     </section>
 
-    <!-- Create a custom exercise (opened from the "Add" button). -->
+    <!-- Create / edit a custom exercise (opened from "Add", or "Edit" on a
+         custom exercise's detail). -->
     <section id="exercise-create-view" class="subview" hidden>
       <div class="subview-head">
         <button id="exercise-create-back" class="ghost" type="button" aria-label="Back to exercises">&larr;</button>
-        <h2 class="subview-title">New exercise</h2>
+        <h2 id="exercise-create-title" class="subview-title">New exercise</h2>
       </div>
       <form id="add-exercise-form" novalidate>
         <div class="field">
@@ -147,6 +148,10 @@
         <div class="field">
           <label for="ex-muscles">Primary muscles <span class="opt">optional, comma-separated</span></label>
           <input id="ex-muscles" name="primary_muscles" type="text" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="ex-secondary-muscles">Secondary muscles <span class="opt">optional, comma-separated</span></label>
+          <input id="ex-secondary-muscles" name="secondary_muscles" type="text" autocomplete="off" />
         </div>
         <div class="field">
           <label for="ex-instructions">Instructions <span class="opt">optional, one step per line</span></label>
@@ -450,6 +455,6 @@
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=33"></script>
+  <script src="/app.js?v=34"></script>
 </body>
 </html>

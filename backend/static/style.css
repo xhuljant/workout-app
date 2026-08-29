@@ -766,11 +766,24 @@ button.settings-section { width: 100%; }
 .workout-exercise:first-child { border-top: 0; padding-top: 0; }
 .workout-exercise-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
 .workout-exercise-name { font-size: 15px; font-weight: 700; color: var(--accent); }
+
+/* Reorder ▲ ▼ + Remove for one exercise in the routine editor. */
+.workout-exercise-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.workout-exercise-controls .routine-move {
+  width: 30px;
+  height: 28px;
+  line-height: 1;
+}
 
 .link-danger {
   background: none;
@@ -782,6 +795,15 @@ button.settings-section { width: 100%; }
   cursor: pointer;
 }
 .link-danger:hover { color: var(--error); }
+
+/* Edit / Delete row at the top of a custom exercise's expanded detail. */
+.exercise-detail-actions {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.exercise-detail-actions .ghost { padding: 4px 12px; }
 
 .workout-notes {
   width: 100%;

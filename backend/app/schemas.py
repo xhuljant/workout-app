@@ -77,12 +77,18 @@ class ExerciseCreate(BaseModel):
     category: str | None = Field(default=None, max_length=100)
     equipment: str | None = Field(default=None, max_length=100)
     primary_muscles: list[str] = Field(default_factory=list)
+    secondary_muscles: list[str] = Field(default_factory=list)
     instructions: list[str] = Field(default_factory=list)
 
     @field_validator("tracking_type")
     @classmethod
     def _known_tracking(cls, v: str) -> str:
         return v if v in _TRACKING_TYPES else "weight_reps"
+
+
+class ExerciseUpdate(ExerciseCreate):
+    """Body for PUT /api/exercises/{id}. Full desired state, same fields as
+    create. Only allowed on custom (user-added) exercises."""
 
 
 class ExercisePublic(BaseModel):
