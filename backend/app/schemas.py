@@ -9,6 +9,7 @@ the API physically cannot return a field (like password_hash) unless we list it 
 """
 import uuid
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator
 
@@ -322,6 +323,24 @@ class RoutineCreate(BaseModel):
 
 # PUT uses the same shape as create.
 RoutineUpdate = RoutineCreate
+
+
+class ShareExport(BaseModel):
+    """A single routine or logged workout packaged for export/import between
+    accounts. Deliberately excludes id/user_id/folder_id -- the importer picks
+    where it lands."""
+    kind: Literal["routine", "workout"]
+    version: int = 1
+    name: str
+    rest_seconds: int | None = None
+    content: RoutineContent
+
+
+class ShareImport(BaseModel):
+    """Body for POST /api/routines/import."""
+    name: str = Field(min_length=1, max_length=200)
+    folder_id: uuid.UUID | None = None
+    payload: ShareExport
 
 
 class RoutineReorder(BaseModel):

@@ -71,6 +71,8 @@
       <div class="routines-head">
         <h3 class="home-history-title">Routines</h3>
         <div class="routines-head-actions">
+          <button id="import-routine-btn" class="ghost" type="button">Import</button>
+          <input id="import-routine-file" type="file" accept="application/json,.json" hidden />
           <button id="new-folder-btn" class="ghost" type="button">+ Folder</button>
           <button id="edit-routines-btn" class="ghost" type="button">Edit</button>
         </div>
@@ -235,6 +237,7 @@
 
       <div class="workout-actions">
         <button id="routine-save" class="submit" type="button">Save</button>
+        <button id="routine-share" class="ghost" type="button" hidden>Share</button>
         <button id="routine-delete" class="ghost workout-discard" type="button">Delete Routine</button>
       </div>
     </section>
@@ -304,6 +307,7 @@
       </div>
       <p id="history-detail-meta" class="exercise-status"></p>
       <div id="history-detail-exercises" class="workout-exercises"></div>
+      <button id="history-detail-share" class="ghost settings-section" type="button">Share</button>
       <button id="history-detail-delete" class="btn-danger settings-section" type="button">Delete this workout</button>
     </section>
 
@@ -456,6 +460,26 @@
       <h3 id="day-picker-title" class="day-picker-title">Workouts</h3>
       <div id="day-picker-list" class="day-picker-list"></div>
       <button id="day-picker-cancel" class="ghost" type="button">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Import: pick a name + destination folder for a shared routine/workout. -->
+  <div id="import-dialog" class="modal" hidden>
+    <div class="modal-box">
+      <h3 class="modal-title">Import workout</h3>
+      <div class="field">
+        <label for="import-name">Name</label>
+        <input id="import-name" type="text" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="import-folder">Folder</label>
+        <select id="import-folder"></select>
+      </div>
+      <p id="import-msg" class="message" role="alert" aria-live="polite"></p>
+      <div class="modal-actions">
+        <button id="import-cancel" class="ghost" type="button">Cancel</button>
+        <button id="import-confirm" class="submit" type="button">Import</button>
+      </div>
     </div>
   </div>
 

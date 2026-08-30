@@ -21,6 +21,7 @@ from ..deps import get_current_user
 from ..models import Routine, User, Workout
 from ..schemas import (
     ExercisePrevious,
+    ShareExport,
     WorkoutCalendarEntry,
     WorkoutPublic,
     WorkoutSet,
@@ -532,6 +533,34 @@ def get_workout(
 ):
     """One of the user's workouts in full -- the History detail view."""
     return _owned_workout(db, current_user, workout_id)
+
+
+@router.get("/{workout_id}/share", response_model=ShareExport)
+def share_workout(
+    workout_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Package one of the user's logged workouts for export as a reusable
+    template -- PR flags and done-state are stripped (via _content_from_workout,
+    the same helper used to start a fresh session from a past one), and there's
+    no id/user_id/folder_id: the importer picks where it lands."""
+    workout = _owned_workout(db, current_user, workout_id)
+    name = "Workout"
+    if workout.routine_id is not None:
+        routine = (
+            db.query(Routine)
+            .filter(Routine.id == workout.routine_id, Routine.user_id == current_user.id)
+            .first()
+        )
+        if routine is not None:
+            name = routine.name
+    return ShareExport(
+        kind="workout",
+        name=name,
+        rest_seconds=workout.rest_seconds,
+        content=_content_from_workout(workout),
+    )
 
 
 @router.delete("/{workout_id}", status_code=status.HTTP_204_NO_CONTENT)

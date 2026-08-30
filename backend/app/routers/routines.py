@@ -15,7 +15,14 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import Folder, Routine, User
-from ..schemas import RoutineCreate, RoutinePublic, RoutineReorder, RoutineUpdate
+from ..schemas import (
+    RoutineCreate,
+    RoutinePublic,
+    RoutineReorder,
+    RoutineUpdate,
+    ShareExport,
+    ShareImport,
+)
 from .folders import _default_folder
 
 router = APIRouter(prefix="/api/routines", tags=["routines"])
@@ -104,6 +111,56 @@ def create_routine(
     db.commit()
     db.refresh(routine)
     return routine
+
+
+@router.post("/import", response_model=RoutinePublic, status_code=status.HTTP_201_CREATED)
+def import_routine(
+    body: ShareImport,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Land a shared routine/workout (from GET .../share on another account) as
+    a new routine, in whichever folder the importer picked. New routines go to
+    the bottom of their folder, same as a normal create."""
+    folder_id = _resolve_folder_id(db, current_user, body.folder_id)
+    highest = (
+        db.query(func.max(Routine.position))
+        .filter(
+            Routine.user_id == current_user.id,
+            Routine.folder_id == folder_id,
+            Routine.deleted_at.is_(None),
+        )
+        .scalar()
+    )
+    routine = Routine(
+        user_id=current_user.id,
+        folder_id=folder_id,
+        name=body.name.strip(),
+        position=(highest + 1) if highest is not None else 0,
+        rest_seconds=body.payload.rest_seconds,
+        content=body.payload.content.model_dump(mode="json"),
+    )
+    db.add(routine)
+    db.commit()
+    db.refresh(routine)
+    return routine
+
+
+@router.get("/{routine_id}/share", response_model=ShareExport)
+def share_routine(
+    routine_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Package one of the user's routines for export -- no id/user_id/folder_id,
+    just enough to recreate it in someone else's account."""
+    routine = _owned_routine(db, current_user, routine_id)
+    return ShareExport(
+        kind="routine",
+        name=routine.name,
+        rest_seconds=routine.rest_seconds,
+        content=routine.content,
+    )
 
 
 @router.put("/order", response_model=list[RoutinePublic])

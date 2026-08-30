@@ -47,6 +47,8 @@ const routineEmpty = document.getElementById("routine-empty");
 const newFolderBtn = document.getElementById("new-folder-btn");
 const editRoutinesBtn = document.getElementById("edit-routines-btn");
 const routineFolderSelect = document.getElementById("routine-folder");
+const importRoutineBtn = document.getElementById("import-routine-btn");
+const importRoutineFile = document.getElementById("import-routine-file");
 
 // Exercises sub-view
 const exercisesBtn = document.getElementById("exercises");
@@ -109,7 +111,16 @@ const routineExercisesEl = document.getElementById("routine-exercises");
 const routineEmptyMsg = document.getElementById("routine-empty-msg");
 const routineAddExerciseBtn = document.getElementById("routine-add-exercise");
 const routineSaveBtn = document.getElementById("routine-save");
+const routineShareBtn = document.getElementById("routine-share");
 const routineDeleteBtn = document.getElementById("routine-delete");
+
+// Import dialog (shared routine/workout -> name + destination folder)
+const importDialogEl = document.getElementById("import-dialog");
+const importNameInput = document.getElementById("import-name");
+const importFolderSelect = document.getElementById("import-folder");
+const importMsgEl = document.getElementById("import-msg");
+const importCancelBtn = document.getElementById("import-cancel");
+const importConfirmBtn = document.getElementById("import-confirm");
 
 // History: a 3-row preview on the home screen + the full sub-view
 const homeHistoryEl = document.getElementById("home-history");
@@ -124,6 +135,7 @@ const historyDetailBackBtn = document.getElementById("history-detail-back");
 const historyDetailTitleEl = document.getElementById("history-detail-title");
 const historyDetailMetaEl = document.getElementById("history-detail-meta");
 const historyDetailExercisesEl = document.getElementById("history-detail-exercises");
+const historyDetailShareBtn = document.getElementById("history-detail-share");
 const historyDetailDeleteBtn = document.getElementById("history-detail-delete");
 
 // Calendar sub-view (opened from the ☰ menu)
@@ -280,6 +292,38 @@ function detailToText(detail) {
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) return detail.map((d) => d.msg).join(" ");
   return "";
+}
+
+// --- Share: download a routine/workout as a .json file someone else imports ---
+function slugify(name) {
+  return (
+    (name || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") ||
+    "workout"
+  );
+}
+
+// Fetches a GET .../share endpoint and saves the result as a downloaded file,
+// the same way the Settings JSON backup does it (see settingsExportJsonBtn).
+async function downloadShare(url, fallbackName) {
+  try {
+    const res = await authFetch(url);
+    if (!res.ok) {
+      showToast("Could not export.");
+      return;
+    }
+    const doc = await res.json();
+    const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
+    const objUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objUrl;
+    a.download = `${slugify(doc.name || fallbackName)}.json`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objUrl);
+  } catch (err) {
+    showToast(err.message || "Could not reach the server.");
+  }
 }
 
 // --- Protected call: who am I? ------------------------------------------
@@ -2426,6 +2470,94 @@ function defaultFolderId() {
   return d ? d.id : (folders[0] && folders[0].id) || null;
 }
 
+// --- Import: pick a name + destination folder for a shared routine/workout ---
+// The file a Share button downloaded elsewhere: { kind, version, name,
+// rest_seconds, content }. Held here between picking the file and confirming
+// the import dialog.
+let pendingImportDoc = null;
+
+importRoutineBtn.addEventListener("click", () => importRoutineFile.click());
+
+importRoutineFile.addEventListener("change", async () => {
+  const file = importRoutineFile.files && importRoutineFile.files[0];
+  importRoutineFile.value = "";
+  if (!file) return;
+
+  let doc;
+  try {
+    doc = JSON.parse(await file.text());
+  } catch (err) {
+    showToast("That file isn't valid JSON.");
+    return;
+  }
+  if (!doc || (doc.kind !== "routine" && doc.kind !== "workout") || !doc.content) {
+    showToast("That file isn't a shared workout.");
+    return;
+  }
+
+  pendingImportDoc = doc;
+  setMsg(importMsgEl, "");
+  importNameInput.value = doc.name || "";
+  importFolderSelect.replaceChildren();
+  for (const f of folders) {
+    const opt = document.createElement("option");
+    opt.value = f.id;
+    opt.textContent = f.name;
+    importFolderSelect.append(opt);
+  }
+  importFolderSelect.value = defaultFolderId() || "";
+  openOverlay(importDialogEl);
+  setTimeout(() => importNameInput.focus(), 50);
+});
+
+function closeImportDialog() {
+  pendingImportDoc = null;
+  closeOverlay(importDialogEl);
+}
+
+importCancelBtn.addEventListener("click", closeImportDialog);
+importDialogEl.addEventListener("click", (e) => {   // tap the dimmed area to close
+  if (e.target === importDialogEl) closeImportDialog();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !importDialogEl.hidden) closeImportDialog();
+});
+
+importConfirmBtn.addEventListener("click", async () => {
+  if (!pendingImportDoc) return;
+  const name = importNameInput.value.trim();
+  if (!name) {
+    importNameInput.focus();
+    return;
+  }
+  importConfirmBtn.disabled = true;
+  setMsg(importMsgEl, "");
+  try {
+    const res = await authFetch(`${ROUTINES_API}/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        folder_id: importFolderSelect.value || null,
+        payload: pendingImportDoc,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setMsg(importMsgEl, detailToText(data.detail) || "Import failed.");
+      return;
+    }
+    pendingImportDoc = null;
+    closeOverlay(importDialogEl);
+    await loadRoutines();
+    showToast("Imported");
+  } catch (err) {
+    setMsg(importMsgEl, err.message || "Could not reach the server.");
+  } finally {
+    importConfirmBtn.disabled = false;
+  }
+});
+
 // --- Folder mutations ---
 async function toggleFolder(folder) {
   folder.collapsed = !folder.collapsed;
@@ -2586,6 +2718,7 @@ function openRoutineEditor(routine) {
   routineTitleEl.textContent = routine ? "Edit Routine" : "New Routine";
   routineNameInput.value = editingRoutine.name;
   routineRestInput.value = editingRoutine.rest_seconds ?? "";
+  routineShareBtn.hidden = !routine;
   routineDeleteBtn.hidden = !routine;
 
   routineFolderSelect.replaceChildren();
@@ -2794,6 +2927,11 @@ routineSaveBtn.addEventListener("click", async () => {
   }
 });
 
+routineShareBtn.addEventListener("click", () => {
+  if (!editingRoutine || !editingRoutine.id) return;
+  downloadShare(`${ROUTINES_API}/${editingRoutine.id}/share`, editingRoutine.name);
+});
+
 routineDeleteBtn.addEventListener("click", async () => {
   if (!editingRoutine || !editingRoutine.id) return;
   if (!(await appConfirm({
@@ -2982,6 +3120,11 @@ async function openHistoryDetail(id) {
     historyDetailMetaEl.textContent = err.message || "Could not reach the server.";
   }
 }
+
+historyDetailShareBtn.addEventListener("click", () => {
+  if (!historyDetailId) return;
+  downloadShare(`${WORKOUTS_API}/${historyDetailId}/share`, historyDetailTitleEl.textContent);
+});
 
 historyDetailDeleteBtn.addEventListener("click", async () => {
   if (!historyDetailId) return;
