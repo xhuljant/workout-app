@@ -4,31 +4,22 @@ Every route here is mounted under the /api/auth prefix (set just below and wired
 up in main.py).
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import jwt
-from fastapi import (
-    APIRouter,
-    BackgroundTasks,
-    Depends,
-    HTTPException,
-    Request,
-    Response,
-    status,
-)
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..config import settings
 from ..database import get_db
 from ..deps import get_current_user, token_predates_password_change
-from ..email import EmailSender, get_email_sender, send_password_reset_email
-from ..models import PasswordReset, Routine, User, Workout
+from ..models import Routine, User, Workout
 from ..schemas import (
-    ForgotPasswordRequest,
     PasswordChange,
     RefreshRequest,
+    RegisterResult,
     ResetPasswordRequest,
+    ResetPasswordResult,
     Token,
     UserCreate,
     UserLogin,
@@ -41,8 +32,9 @@ from ..security import (
     create_access_token,
     create_refresh_token,
     decode_token,
-    generate_reset_token,
-    hash_reset_token,
+    generate_recovery_code,
+    hash_recovery_code,
+    verify_recovery_code,
 )
 
 # An APIRouter is a group of related routes. prefix adds "/api/auth" to each path.
@@ -63,9 +55,13 @@ def _normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
-@router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register", response_model=RegisterResult, status_code=status.HTTP_201_CREATED
+)
 def register(body: UserCreate, db: Session = Depends(get_db)):
-    """Create a new account and return tokens, so the user is logged in immediately."""
+    """Create a new account and return tokens (so the user is logged in
+    immediately) plus a one-time recovery code -- the only way back into the
+    account if the password is forgotten. Shown once, never retrievable again."""
     email = _normalize_email(body.email)
 
     # Fail early with a clear message if the email is already taken.
@@ -76,16 +72,23 @@ def register(body: UserCreate, db: Session = Depends(get_db)):
             detail="An account with that email already exists.",
         )
 
+    recovery_code = generate_recovery_code()
     user = User(
         email=email,
         display_name=body.display_name,
         password_hash=hash_password(body.password),  # store the hash, never the password
+        recovery_code_hash=hash_recovery_code(recovery_code),
     )
     db.add(user)      # stage the new row
     db.commit()       # actually write it to Postgres
     db.refresh(user)  # reload so we have the generated id and timestamps
 
-    return _tokens_for(user)
+    tokens = _tokens_for(user)
+    return RegisterResult(
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+        recovery_code=recovery_code,
+    )
 
 
 @router.post("/login", response_model=Token)
@@ -218,119 +221,44 @@ def change_password(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-# How many still-valid reset requests one account may rack up inside the TTL
-# window. A crude in-app throttle -- a real rate limiter belongs at the edge.
-_MAX_ACTIVE_RESETS_PER_WINDOW = 3
+# Verified against this when the email is unknown, so an attacker can't tell
+# "no such account" from "wrong code" by timing the argon2 verify. Computed once.
+_DUMMY_RECOVERY_HASH = hash_recovery_code("0" * 32)
 
 
-@router.post("/forgot-password", status_code=status.HTTP_202_ACCEPTED)
-def forgot_password(
-    body: ForgotPasswordRequest,
-    request: Request,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    sender: EmailSender = Depends(get_email_sender),
-):
-    """Start a password reset.
-
-    ALWAYS returns 202 with an empty body, whether or not the email maps to an
-    account -- this endpoint must not reveal which addresses are registered
-    (same reasoning as login's single error message). The email, if any, is sent
-    from a background task *after* the response so latency doesn't leak it either.
-    """
-    email = _normalize_email(body.email)
-    now = datetime.now(timezone.utc)
-
-    user = (
-        db.query(User)
-        .filter(User.email == email, User.deleted_at.is_(None))
-        .first()
-    )
-
-    if user is not None:
-        # Throttle: cap how many reset emails one account can trigger inside the
-        # TTL window. Counts every request in the window, used or not -- the
-        # invalidation sweep below would otherwise keep the "unused" count at 1.
-        window_start = now - timedelta(
-            minutes=settings.password_reset_token_expire_minutes
-        )
-        recent = (
-            db.query(PasswordReset)
-            .filter(
-                PasswordReset.user_id == user.id,
-                PasswordReset.created_at >= window_start,
-            )
-            .count()
-        )
-        if recent < _MAX_ACTIVE_RESETS_PER_WINDOW:
-            # Invalidate this user's earlier unused links so only the newest works.
-            db.query(PasswordReset).filter(
-                PasswordReset.user_id == user.id,
-                PasswordReset.used_at.is_(None),
-            ).update({PasswordReset.used_at: now}, synchronize_session=False)
-
-            raw_token = generate_reset_token()
-            db.add(PasswordReset(
-                user_id=user.id,
-                token_hash=hash_reset_token(raw_token),
-                expires_at=now + timedelta(
-                    minutes=settings.password_reset_token_expire_minutes
-                ),
-                requested_ip=(request.client.host if request.client else None),
-            ))
-            db.commit()
-
-            background_tasks.add_task(
-                send_password_reset_email, sender, to=user.email, raw_token=raw_token
-            )
-
-    return Response(status_code=status.HTTP_202_ACCEPTED)
-
-
-@router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/reset-password", response_model=ResetPasswordResult)
 def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
-    """Consume a reset token and set a new password.
+    """Set a new password using the account's one-time recovery code.
 
-    One vague 400 for every token failure mode (unknown / expired / already
-    used) so nothing leaks. The new-password length is checked by the schema, so
-    a too-short password 422s *before* the token is spent.
+    The used code is rotated -- the response carries a fresh code the user must
+    save. One vague 400 covers unknown email / wrong code / deleted account. A
+    too-short new password 422s from the schema before the code is touched.
     """
     invalid = HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail="This reset link is invalid or has expired. Request a new one.",
+        detail="Email or recovery code is incorrect.",
     )
-    now = datetime.now(timezone.utc)
-
-    pr = (
-        db.query(PasswordReset)
-        .filter(PasswordReset.token_hash == hash_reset_token(body.token))
-        .first()
-    )
-    if pr is None or pr.used_at is not None or pr.expires_at <= now:
-        raise invalid
 
     user = (
         db.query(User)
-        .filter(User.id == pr.user_id, User.deleted_at.is_(None))
+        .filter(User.email == _normalize_email(body.email), User.deleted_at.is_(None))
         .first()
     )
-    if user is None:
+    code_hash = user.recovery_code_hash if user is not None else _DUMMY_RECOVERY_HASH
+    if not verify_recovery_code(body.recovery_code, code_hash) or user is None:
         raise invalid
 
+    now = datetime.now(timezone.utc)
     user.password_hash = hash_password(body.new_password)
     # Whole seconds -- see token_predates_password_change. Ends every session
     # that was open before this reset (the point of "reset my stolen laptop").
     user.password_changed_at = now.replace(microsecond=0)
 
-    pr.used_at = now
-    # Burn this user's other outstanding links too.
-    db.query(PasswordReset).filter(
-        PasswordReset.user_id == user.id,
-        PasswordReset.used_at.is_(None),
-    ).update({PasswordReset.used_at: now}, synchronize_session=False)
+    new_code = generate_recovery_code()
+    user.recovery_code_hash = hash_recovery_code(new_code)
 
     db.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return ResetPasswordResult(recovery_code=new_code)
 
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)

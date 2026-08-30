@@ -35,7 +35,6 @@ _WIPE = [
     "DELETE FROM workouts",
     "DELETE FROM routines",
     "DELETE FROM folders",
-    "DELETE FROM password_resets",
     "DELETE FROM exercises WHERE is_custom = true OR created_by IS NOT NULL",
     "DELETE FROM users",
 ]

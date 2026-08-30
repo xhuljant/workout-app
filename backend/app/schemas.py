@@ -52,22 +52,30 @@ class PasswordChange(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
-class ForgotPasswordRequest(BaseModel):
-    """Body for POST /api/auth/forgot-password."""
-    email: EmailStr
-
-
 class ResetPasswordRequest(BaseModel):
-    """Body for POST /api/auth/reset-password."""
-    token: str = Field(min_length=16, max_length=512)
+    """Body for POST /api/auth/reset-password. No email round-trip: the user
+    proves ownership with the one-time recovery code they saved at sign-up."""
+    email: EmailStr
+    recovery_code: str = Field(min_length=8, max_length=128)
     new_password: str = Field(min_length=8, max_length=128)   # same rule as PasswordChange
 
 
 class Token(BaseModel):
-    """Returned by register / login / refresh."""
+    """Returned by login / refresh (and the base of the register response)."""
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+
+
+class RegisterResult(Token):
+    """Register response: the usual token pair PLUS the one-time recovery code,
+    shown to the user once and never retrievable again."""
+    recovery_code: str
+
+
+class ResetPasswordResult(BaseModel):
+    """Reset response: the NEW recovery code -- the used one is now dead."""
+    recovery_code: str
 
 
 class RefreshRequest(BaseModel):

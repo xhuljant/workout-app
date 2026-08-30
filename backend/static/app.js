@@ -35,20 +35,22 @@ const form = document.getElementById("auth-form");
 const submitBtn = document.getElementById("submit");
 const messageEl = document.getElementById("message");
 
-// Forgot / reset password (peers of the auth form, shown on the logged-out screen)
+// Reset-with-recovery-code + the one-time recovery-code screen (peers of the
+// auth form, shown on the logged-out screen).
 const forgotRow = document.getElementById("forgot-row");
 const forgotLink = document.getElementById("forgot-link");
-const forgotView = document.getElementById("forgot-view");
-const forgotForm = document.getElementById("forgot-form");
-const forgotEmailInput = document.getElementById("forgot-email");
-const forgotMsg = document.getElementById("forgot-msg");
-const forgotBackBtn = document.getElementById("forgot-back");
 const resetView = document.getElementById("reset-view");
 const resetForm = document.getElementById("reset-form");
+const resetEmailInput = document.getElementById("reset-email");
+const resetCodeInput = document.getElementById("reset-code");
 const resetNewPwInput = document.getElementById("reset-new-pw");
 const resetMsg = document.getElementById("reset-msg");
 const resetBackBtn = document.getElementById("reset-back");
-let pendingResetToken = null;
+const recoveryCodeView = document.getElementById("recovery-code-view");
+const recoveryCodeValue = document.getElementById("recovery-code-value");
+const recoveryCodeCopyBtn = document.getElementById("recovery-code-copy");
+const recoveryCodeContinueBtn = document.getElementById("recovery-code-continue");
+let recoveryCodeOnContinue = null;
 const home = document.getElementById("home");
 const whoEl = document.getElementById("who");
 const menuBtn = document.getElementById("menu-btn");
@@ -242,65 +244,58 @@ function setMode(next) {
   showMessage("");                                       // clear any old error
 }
 
-// --- Forgot / reset password views ------------------------------------------
-// Three logged-out screens share the card: the auth form, #forgot-view (ask for
-// an email), and #reset-view (set a new password, reached from the email link).
+// --- Reset with recovery code + the one-time code screen --------------------
+// Logged-out screens sharing the card: the auth form, #reset-view (email +
+// recovery code + new password), and #recovery-code-view (shows a code once).
 
 function showAuthLogin() {
-  pendingResetToken = null;
-  forgotView.hidden = true;
   resetView.hidden = true;
+  recoveryCodeView.hidden = true;
+  recoveryCodeOnContinue = null;
   form.hidden = false;
   tabsEl.hidden = false;
   setMode("login");
 }
 
-function showForgotView() {
+function showResetView() {
   form.hidden = true;
   tabsEl.hidden = true;
-  resetView.hidden = true;
-  forgotView.hidden = false;
-  forgotMsg.textContent = "";
-  forgotEmailInput.value = document.getElementById("email").value.trim();
-}
-
-function showResetView(token) {
-  pendingResetToken = token;
-  form.hidden = true;
-  tabsEl.hidden = true;
-  forgotView.hidden = true;
+  recoveryCodeView.hidden = true;
   resetView.hidden = false;
   resetMsg.textContent = "";
+  resetEmailInput.value = document.getElementById("email").value.trim();
+  resetCodeInput.value = "";
   resetNewPwInput.value = "";
 }
 
-forgotLink.addEventListener("click", showForgotView);
-forgotBackBtn.addEventListener("click", showAuthLogin);
-resetBackBtn.addEventListener("click", () => {
-  history.replaceState({}, "", location.pathname);
-  showAuthLogin();
+// Show `code` on the one-time screen; `onContinue` runs when the user confirms.
+function showRecoveryCode(code, onContinue) {
+  recoveryCodeOnContinue = onContinue;
+  recoveryCodeValue.textContent = code;
+  recoveryCodeCopyBtn.textContent = "Copy code";
+  form.hidden = true;
+  tabsEl.hidden = true;
+  resetView.hidden = true;
+  recoveryCodeView.hidden = false;
+}
+
+forgotLink.addEventListener("click", showResetView);
+resetBackBtn.addEventListener("click", showAuthLogin);
+
+recoveryCodeCopyBtn.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(recoveryCodeValue.textContent);
+    recoveryCodeCopyBtn.textContent = "Copied";
+  } catch (err) {
+    recoveryCodeCopyBtn.textContent = "Copy failed — select it manually";
+  }
 });
 
-forgotForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const btn = document.getElementById("forgot-submit");
-  btn.disabled = true;
-  try {
-    await fetch(API + "/forgot-password", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: forgotEmailInput.value.trim() }),
-    });
-    // Always the same message, whatever the server did -- it deliberately won't
-    // say whether the address has an account.
-    setMsg(forgotMsg,
-      "If that email has an account, a reset link is on its way. Check your inbox.",
-      "ok");
-  } catch (err) {
-    setMsg(forgotMsg, "Could not reach the server.");
-  } finally {
-    btn.disabled = false;
-  }
+recoveryCodeContinueBtn.addEventListener("click", () => {
+  const go = recoveryCodeOnContinue;
+  recoveryCodeOnContinue = null;
+  recoveryCodeView.hidden = true;
+  if (go) go();
 });
 
 resetForm.addEventListener("submit", async (event) => {
@@ -316,18 +311,20 @@ resetForm.addEventListener("submit", async (event) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        token: pendingResetToken,
+        email: resetEmailInput.value.trim(),
+        recovery_code: resetCodeInput.value.trim(),
         new_password: resetNewPwInput.value,
       }),
     });
-    if (res.status === 204) {
-      history.replaceState({}, "", location.pathname);
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
       store.clear();                    // any old tokens are dead now anyway
-      showAuthLogin();
-      showMessage("Password updated. Log in with your new password.", "ok");
+      showRecoveryCode(data.recovery_code, () => {
+        showAuthLogin();
+        showMessage("Password updated. Log in with your new password.", "ok");
+      });
       return;
     }
-    const data = await res.json().catch(() => ({}));
     setMsg(resetMsg, detailToText(data.detail) || "Could not reset password.");
   } catch (err) {
     setMsg(resetMsg, "Could not reach the server.");
@@ -375,7 +372,14 @@ form.addEventListener("submit", async (event) => {
     }
 
     store.set(data);          // save the access + refresh tokens
-    await loadProfile();      // prove the access token actually works
+
+    if (data.recovery_code) {
+      // Fresh sign-up: make the user save their one-time recovery code before
+      // dropping them onto the home screen. They're already logged in.
+      showRecoveryCode(data.recovery_code, () => loadProfile());
+    } else {
+      await loadProfile();    // prove the access token actually works
+    }
   } catch (err) {
     showMessage("Could not reach the server.");
   } finally {
@@ -559,8 +563,9 @@ function showLoggedIn(user) {
 function showLoggedOut() {
   form.hidden = false;
   tabsEl.hidden = false;
-  forgotView.hidden = true;
   resetView.hidden = true;
+  recoveryCodeView.hidden = true;
+  recoveryCodeOnContinue = null;
   for (const v of ALL_VIEWS) v.hidden = true;
   menuBtn.hidden = true;
   closeSideMenu();
@@ -4170,15 +4175,8 @@ settingsImportFile.addEventListener("change", async () => {
   }
 });
 
-// --- On load ------------------------------------------------------------
-const bootResetToken = new URLSearchParams(location.search).get("reset_token");
-if (bootResetToken) {
-  // Arrived from the emailed link. Show the "set a new password" form even over
-  // a stale session, and strip the token from the address bar so it isn't
-  // bookmarked, shoulder-surfed, or leaked in a Referer header.
-  history.replaceState({}, "", location.pathname);
-  showResetView(bootResetToken);
-} else if (store.access || store.refresh) {
+// --- On load: if we hold either token, try to use it --------------------
+if (store.access || store.refresh) {
   // Hide the login / create-account UI straight away so it never flashes
   // before loadProfile() confirms the session and shows the home view.
   form.hidden = true;

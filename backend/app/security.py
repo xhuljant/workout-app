@@ -3,7 +3,7 @@
 This module knows nothing about the database or FastAPI -- it's just the crypto
 plumbing. Keeping it isolated makes it easy to test on its own.
 """
-import hashlib
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -72,19 +72,35 @@ def decode_token(token: str) -> dict:
     return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
 
 
-# --- Password-reset tokens ------------------------------------------------
-# These are NOT JWTs: they're opaque random strings emailed to the user. The
-# raw value never touches the database -- only its SHA-256 digest is stored
-# (see models.PasswordReset). 256 bits of entropy means there's nothing to
-# brute-force, so a plain fast digest is the right tool: it's deterministic,
-# so the row can be found with one indexed equality match.
+# --- Account recovery code ----------------------------------------------
+# A one-time code shown to the user exactly once (at registration, and again
+# after each password reset, which rotates it). It's the only unauthenticated
+# way back into an account -- there is no email fallback. Stored as an argon2
+# hash on users.recovery_code_hash: we look the account up by email first, so
+# there's no scan, and the ~50ms verify also throttles guessing. 128 bits of
+# entropy makes online brute force hopeless regardless.
+_RECOVERY_CODE_BYTES = 16
 
 
-def generate_reset_token() -> str:
-    """A fresh, opaque, URL-safe password-reset token (~43 chars)."""
-    return secrets.token_urlsafe(32)
+def generate_recovery_code() -> str:
+    """A fresh recovery code, grouped as xxxx-xxxx-... for legibility."""
+    raw = secrets.token_hex(_RECOVERY_CODE_BYTES)          # 32 lowercase hex chars
+    return "-".join(raw[i:i + 4] for i in range(0, len(raw), 4))
 
 
-def hash_reset_token(raw_token: str) -> str:
-    """SHA-256 hex digest of a reset token -- this is what gets stored."""
-    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+def normalize_recovery_code(code: str) -> str:
+    """Strip formatting so hyphens / spaces / case don't matter on input."""
+    return re.sub(r"[^a-z0-9]", "", code.strip().lower())
+
+
+def hash_recovery_code(code: str) -> str:
+    """argon2 hash of a recovery code -- this is what gets stored."""
+    return _password_hasher.hash(normalize_recovery_code(code))
+
+
+def verify_recovery_code(code: str, code_hash: str) -> bool:
+    """True if the code matches the stored hash, else False (never raises)."""
+    try:
+        return _password_hasher.verify(code_hash, normalize_recovery_code(code))
+    except (VerifyMismatchError, VerificationError):
+        return False
