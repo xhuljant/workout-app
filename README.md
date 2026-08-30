@@ -48,8 +48,7 @@ preferred units for display, with up to four progress photos per entry.
 **Data ownership**
 CSV export of every logged set; full-account JSON export and import
 (merge-by-id — importing never overwrites existing rows); and a Trash screen —
-every delete is soft and restorable for 30 days, with one-tap Undo on the delete
-action itself.
+every delete is soft and restorable for 30 days.
 
 ---
 
@@ -318,6 +317,33 @@ Coverage: auth round-trip and email normalisation, the workout lifecycle plus th
 `409` optimistic-concurrency path, `previous` / `stats` math (Epley 1RM, session
 volume, per-mode aggregates), the one-default-folder invariant, measurement CRUD
 with photos, and JSON export → import into a fresh account.
+
+---
+
+## Admin CLI
+
+There's no admin role or admin UI — account support tasks are done from the
+command line, against the running `api` container, with `backend/app/admin_cli.py`
+(`docker compose exec api python -m app.admin_cli <command> ...`). Every command
+looks a user up by email and only touches non-deleted accounts.
+
+| Command | What it does |
+| --- | --- |
+| `list-users [query]` | List active accounts, optionally filtered by email/name substring. |
+| `reset-password <email> [--password PWD]` | Set a new password. Omit `--password` to generate and print a random one. |
+| `rename-user <email> "New Name"` | Change an account's display name. |
+| `clear-history <email> [--yes]` | Soft-delete all of that account's logged workouts (recoverable from Trash for 30 days, same as deleting them one by one). Asks for confirmation unless `--yes` is passed. |
+| `delete-account <email> [--yes]` | Soft-delete the account — same effect as the in-app "Delete account" (routines and any active workout are soft-deleted, the email is tombstoned, finished history is left in place). Asks for confirmation unless `--yes` is passed. |
+
+Examples:
+
+```bash
+docker compose exec api python -m app.admin_cli list-users
+docker compose exec api python -m app.admin_cli reset-password alice@example.com
+docker compose exec api python -m app.admin_cli rename-user alice@example.com "Alice K"
+docker compose exec api python -m app.admin_cli clear-history alice@example.com
+docker compose exec api python -m app.admin_cli delete-account alice@example.com
+```
 
 ---
 

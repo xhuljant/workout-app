@@ -520,6 +520,8 @@ function renderFolders() {
   routineList.replaceChildren();
   routineEmpty.hidden = true;   // each folder shows its own empty state now
   editRoutinesBtn.textContent = editMode ? "Done" : "Edit";
+  newFolderBtn.hidden = !editMode;
+  importRoutineBtn.hidden = !editMode;
 
   const nonDefault = folders.filter((f) => !f.is_default);
 
@@ -1212,17 +1214,7 @@ function renderExerciseDetail(ex, body, stats) {
         exerciseStatsCache.delete(ex.id);
         loadExerciseDetail(ex, body);
         loadHomeHistory();
-        showToast("Workout deleted", {
-          actionLabel: "Undo",
-          onAction: async () => {
-            try {
-              await authFetch(`${WORKOUTS_API}/${s.workout_id}/restore`, { method: "POST" });
-            } catch (err) { /* ignore */ }
-            exerciseStatsCache.delete(ex.id);
-            loadExerciseDetail(ex, body);
-            loadHomeHistory();
-          },
-        });
+        showToast("Workout deleted");
       } catch (err) {
         /* ignore */
       }
@@ -3145,18 +3137,7 @@ historyDetailDeleteBtn.addEventListener("click", async () => {
     loadHistory();
     loadHomeHistory();
     if (cameFrom === calendarView) loadCalendar();
-    showToast("Workout deleted", {
-      actionLabel: "Undo",
-      onAction: async () => {
-        try {
-          await authFetch(`${WORKOUTS_API}/${deletedId}/restore`, { method: "POST" });
-        } catch (err) { /* ignore */ }
-        exerciseStatsCache.clear();
-        loadHistory();
-        loadHomeHistory();
-        if (cameFrom === calendarView) loadCalendar();
-      },
-    });
+    showToast("Workout deleted");
   } catch (err) {
     /* stay put */
   } finally {
@@ -3783,15 +3764,7 @@ measurementDeleteBtn.addEventListener("click", async () => {
     if (res.status !== 204 && res.status !== 404) return;
     closeMeasurementEditor();
     await loadMeasurements();
-    showToast("Measurement deleted", {
-      actionLabel: "Undo",
-      onAction: async () => {
-        try {
-          await authFetch(MEASUREMENTS_API + "/" + deletedId + "/restore", { method: "POST" });
-        } catch (err) { /* ignore */ }
-        await loadMeasurements();
-      },
-    });
+    showToast("Measurement deleted");
   } catch (err) {
     /* stay put */
   } finally {
