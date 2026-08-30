@@ -34,23 +34,6 @@ const nameField = document.getElementById("name-field");
 const form = document.getElementById("auth-form");
 const submitBtn = document.getElementById("submit");
 const messageEl = document.getElementById("message");
-
-// Reset-with-recovery-code + the one-time recovery-code screen (peers of the
-// auth form, shown on the logged-out screen).
-const forgotRow = document.getElementById("forgot-row");
-const forgotLink = document.getElementById("forgot-link");
-const resetView = document.getElementById("reset-view");
-const resetForm = document.getElementById("reset-form");
-const resetEmailInput = document.getElementById("reset-email");
-const resetCodeInput = document.getElementById("reset-code");
-const resetNewPwInput = document.getElementById("reset-new-pw");
-const resetMsg = document.getElementById("reset-msg");
-const resetBackBtn = document.getElementById("reset-back");
-const recoveryCodeView = document.getElementById("recovery-code-view");
-const recoveryCodeValue = document.getElementById("recovery-code-value");
-const recoveryCodeCopyBtn = document.getElementById("recovery-code-copy");
-const recoveryCodeContinueBtn = document.getElementById("recovery-code-continue");
-let recoveryCodeOnContinue = null;
 const home = document.getElementById("home");
 const whoEl = document.getElementById("who");
 const menuBtn = document.getElementById("menu-btn");
@@ -240,98 +223,8 @@ function setMode(next) {
   nameField.hidden = !registering;                       // name is only needed to register
   submitBtn.textContent = registering ? "Create account" : "Log in";
   passwordInput.autocomplete = registering ? "new-password" : "current-password";
-  forgotRow.hidden = registering;                        // "Forgot password?" is a login-only affordance
   showMessage("");                                       // clear any old error
 }
-
-// --- Reset with recovery code + the one-time code screen --------------------
-// Logged-out screens sharing the card: the auth form, #reset-view (email +
-// recovery code + new password), and #recovery-code-view (shows a code once).
-
-function showAuthLogin() {
-  resetView.hidden = true;
-  recoveryCodeView.hidden = true;
-  recoveryCodeOnContinue = null;
-  form.hidden = false;
-  tabsEl.hidden = false;
-  setMode("login");
-}
-
-function showResetView() {
-  form.hidden = true;
-  tabsEl.hidden = true;
-  recoveryCodeView.hidden = true;
-  resetView.hidden = false;
-  resetMsg.textContent = "";
-  resetEmailInput.value = document.getElementById("email").value.trim();
-  resetCodeInput.value = "";
-  resetNewPwInput.value = "";
-}
-
-// Show `code` on the one-time screen; `onContinue` runs when the user confirms.
-function showRecoveryCode(code, onContinue) {
-  recoveryCodeOnContinue = onContinue;
-  recoveryCodeValue.textContent = code;
-  recoveryCodeCopyBtn.textContent = "Copy code";
-  form.hidden = true;
-  tabsEl.hidden = true;
-  resetView.hidden = true;
-  recoveryCodeView.hidden = false;
-}
-
-forgotLink.addEventListener("click", showResetView);
-resetBackBtn.addEventListener("click", showAuthLogin);
-
-recoveryCodeCopyBtn.addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText(recoveryCodeValue.textContent);
-    recoveryCodeCopyBtn.textContent = "Copied";
-  } catch (err) {
-    recoveryCodeCopyBtn.textContent = "Copy failed — select it manually";
-  }
-});
-
-recoveryCodeContinueBtn.addEventListener("click", () => {
-  const go = recoveryCodeOnContinue;
-  recoveryCodeOnContinue = null;
-  recoveryCodeView.hidden = true;
-  if (go) go();
-});
-
-resetForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const btn = document.getElementById("reset-submit");
-  if (resetNewPwInput.value.length < 8) {
-    setMsg(resetMsg, "Password must be at least 8 characters.");
-    return;
-  }
-  btn.disabled = true;
-  try {
-    const res = await fetch(API + "/reset-password", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: resetEmailInput.value.trim(),
-        recovery_code: resetCodeInput.value.trim(),
-        new_password: resetNewPwInput.value,
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok) {
-      store.clear();                    // any old tokens are dead now anyway
-      showRecoveryCode(data.recovery_code, () => {
-        showAuthLogin();
-        showMessage("Password updated. Log in with your new password.", "ok");
-      });
-      return;
-    }
-    setMsg(resetMsg, detailToText(data.detail) || "Could not reset password.");
-  } catch (err) {
-    setMsg(resetMsg, "Could not reach the server.");
-  } finally {
-    btn.disabled = false;
-  }
-});
 
 // Show an error (red) or an "ok" message (green).
 function showMessage(text, kind = "error") {
@@ -372,14 +265,7 @@ form.addEventListener("submit", async (event) => {
     }
 
     store.set(data);          // save the access + refresh tokens
-
-    if (data.recovery_code) {
-      // Fresh sign-up: make the user save their one-time recovery code before
-      // dropping them onto the home screen. They're already logged in.
-      showRecoveryCode(data.recovery_code, () => loadProfile());
-    } else {
-      await loadProfile();    // prove the access token actually works
-    }
+    await loadProfile();      // prove the access token actually works
   } catch (err) {
     showMessage("Could not reach the server.");
   } finally {
@@ -563,9 +449,6 @@ function showLoggedIn(user) {
 function showLoggedOut() {
   form.hidden = false;
   tabsEl.hidden = false;
-  resetView.hidden = true;
-  recoveryCodeView.hidden = true;
-  recoveryCodeOnContinue = null;
   for (const v of ALL_VIEWS) v.hidden = true;
   menuBtn.hidden = true;
   closeSideMenu();

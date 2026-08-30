@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=40" />
+  <link rel="stylesheet" href="/style.css?v=38" />
 </head>
 <body>
   <main class="card">
@@ -51,56 +51,7 @@
       <p id="message" class="message" role="alert" aria-live="polite"></p>
 
       <button id="submit" class="submit" type="submit">Log in</button>
-
-      <p class="forgot-row" id="forgot-row">
-        <button id="forgot-link" class="linklike" type="button">Forgot password?</button>
-      </p>
     </form>
-
-    <!-- Reset with the one-time recovery code. Reached from "Forgot password?". -->
-    <section id="reset-view" hidden>
-      <div class="subview-head">
-        <button id="reset-back" class="ghost" type="button">&larr; Back to log in</button>
-        <h2 class="subview-title">Reset password</h2>
-      </div>
-      <form id="reset-form" novalidate>
-        <div class="field">
-          <label for="reset-email">Email</label>
-          <input id="reset-email" type="email" autocomplete="email" required />
-        </div>
-        <div class="field">
-          <label for="reset-code">Recovery code</label>
-          <input id="reset-code" type="text" autocomplete="off"
-                 autocapitalize="off" autocorrect="off" spellcheck="false"
-                 placeholder="xxxx-xxxx-xxxx-xxxx-xxxx-xxxx-xxxx-xxxx" required />
-        </div>
-        <div class="field">
-          <label for="reset-new-pw">New password</label>
-          <input id="reset-new-pw" type="password" autocomplete="new-password"
-                 minlength="8" required />
-        </div>
-        <p id="reset-msg" class="message" role="alert" aria-live="polite"></p>
-        <button id="reset-submit" class="submit" type="submit">Set new password</button>
-      </form>
-    </section>
-
-    <!-- One-time recovery code: shown once after sign-up, and again after each
-         reset (which rotates it). The only way back into a locked-out account. -->
-    <section id="recovery-code-view" hidden>
-      <div class="subview-head">
-        <h2 class="subview-title">Save your recovery code</h2>
-      </div>
-      <p class="recovery-code-value" id="recovery-code-value"></p>
-      <button id="recovery-code-copy" class="ghost" type="button">Copy code</button>
-      <p class="recovery-code-warn" id="recovery-code-warn">
-        This is the only way to reset your password if you forget it. Store it
-        somewhere safe &mdash; we can&rsquo;t recover it for you and it won&rsquo;t
-        be shown again.
-      </p>
-      <button id="recovery-code-continue" class="submit" type="button">
-        I&rsquo;ve saved it &mdash; continue
-      </button>
-    </section>
 
     <!-- The home screen: shown after a successful login. -->
     <section id="home" class="home" hidden>
@@ -524,6 +475,6 @@
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=40"></script>
+  <script src="/app.js?v=38"></script>
 </body>
 </html>

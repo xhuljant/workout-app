@@ -73,20 +73,6 @@ class User(Base):
         DateTime(timezone=True), nullable=True
     )
 
-    # Set whenever the password changes (the reset flow or change-password).
-    # Any access / refresh token whose "issued at" time is older than this is
-    # rejected -- see deps.py and the /refresh route. NULL = never changed since
-    # the account was created (no token is older than "never").
-    password_changed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-
-    # argon2 hash of the account's current one-time recovery code. Shown to the
-    # user exactly once -- at registration, and again after each password reset
-    # (which rotates it). Losing it = losing the only unauthenticated way back
-    # into the account; there is no email fallback.
-    recovery_code_hash: Mapped[str] = mapped_column(String, nullable=False)
-
 
 class Exercise(Base):
     """The exercise library. One shared, global table -- every user sees every

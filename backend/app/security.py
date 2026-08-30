@@ -3,8 +3,6 @@
 This module knows nothing about the database or FastAPI -- it's just the crypto
 plumbing. Keeping it isolated makes it easy to test on its own.
 """
-import re
-import secrets
 from datetime import datetime, timedelta, timezone
 
 import jwt  # the PyJWT library
@@ -70,37 +68,3 @@ def decode_token(token: str) -> dict:
     or expired. Callers are expected to catch that and return a 401.
     """
     return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
-
-
-# --- Account recovery code ----------------------------------------------
-# A one-time code shown to the user exactly once (at registration, and again
-# after each password reset, which rotates it). It's the only unauthenticated
-# way back into an account -- there is no email fallback. Stored as an argon2
-# hash on users.recovery_code_hash: we look the account up by email first, so
-# there's no scan, and the ~50ms verify also throttles guessing. 128 bits of
-# entropy makes online brute force hopeless regardless.
-_RECOVERY_CODE_BYTES = 16
-
-
-def generate_recovery_code() -> str:
-    """A fresh recovery code, grouped as xxxx-xxxx-... for legibility."""
-    raw = secrets.token_hex(_RECOVERY_CODE_BYTES)          # 32 lowercase hex chars
-    return "-".join(raw[i:i + 4] for i in range(0, len(raw), 4))
-
-
-def normalize_recovery_code(code: str) -> str:
-    """Strip formatting so hyphens / spaces / case don't matter on input."""
-    return re.sub(r"[^a-z0-9]", "", code.strip().lower())
-
-
-def hash_recovery_code(code: str) -> str:
-    """argon2 hash of a recovery code -- this is what gets stored."""
-    return _password_hasher.hash(normalize_recovery_code(code))
-
-
-def verify_recovery_code(code: str, code_hash: str) -> bool:
-    """True if the code matches the stored hash, else False (never raises)."""
-    try:
-        return _password_hasher.verify(code_hash, normalize_recovery_code(code))
-    except (VerifyMismatchError, VerificationError):
-        return False
