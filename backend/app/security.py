@@ -3,6 +3,8 @@
 This module knows nothing about the database or FastAPI -- it's just the crypto
 plumbing. Keeping it isolated makes it easy to test on its own.
 """
+import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 
 import jwt  # the PyJWT library
@@ -68,3 +70,21 @@ def decode_token(token: str) -> dict:
     or expired. Callers are expected to catch that and return a 401.
     """
     return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+
+
+# --- Password-reset tokens ------------------------------------------------
+# These are NOT JWTs: they're opaque random strings emailed to the user. The
+# raw value never touches the database -- only its SHA-256 digest is stored
+# (see models.PasswordReset). 256 bits of entropy means there's nothing to
+# brute-force, so a plain fast digest is the right tool: it's deterministic,
+# so the row can be found with one indexed equality match.
+
+
+def generate_reset_token() -> str:
+    """A fresh, opaque, URL-safe password-reset token (~43 chars)."""
+    return secrets.token_urlsafe(32)
+
+
+def hash_reset_token(raw_token: str) -> str:
+    """SHA-256 hex digest of a reset token -- this is what gets stored."""
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()

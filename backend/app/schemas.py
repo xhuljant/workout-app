@@ -52,6 +52,17 @@ class PasswordChange(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class ForgotPasswordRequest(BaseModel):
+    """Body for POST /api/auth/forgot-password."""
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    """Body for POST /api/auth/reset-password."""
+    token: str = Field(min_length=16, max_length=512)
+    new_password: str = Field(min_length=8, max_length=128)   # same rule as PasswordChange
+
+
 class Token(BaseModel):
     """Returned by register / login / refresh."""
     access_token: str

@@ -4,18 +4,31 @@ Every route here is mounted under the /api/auth prefix (set just below and wired
 up in main.py).
 """
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Request,
+    Response,
+    status,
+)
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..database import get_db
-from ..deps import get_current_user
-from ..models import Routine, User, Workout
+from ..deps import get_current_user, token_predates_password_change
+from ..email import EmailSender, get_email_sender, send_password_reset_email
+from ..models import PasswordReset, Routine, User, Workout
 from ..schemas import (
+    ForgotPasswordRequest,
     PasswordChange,
     RefreshRequest,
+    ResetPasswordRequest,
     Token,
     UserCreate,
     UserLogin,
@@ -28,6 +41,8 @@ from ..security import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    generate_reset_token,
+    hash_reset_token,
 )
 
 # An APIRouter is a group of related routes. prefix adds "/api/auth" to each path.
@@ -123,6 +138,11 @@ def refresh(body: RefreshRequest, db: Session = Depends(get_db)):
     if user is None:
         raise invalid
 
+    # A password change since this refresh token was issued ends the session --
+    # this is what actually revokes the long-lived token on other devices.
+    if token_predates_password_change(payload, user):
+        raise invalid
+
     return _tokens_for(user)
 
 
@@ -191,6 +211,124 @@ def change_password(
             detail="Current password is incorrect.",
         )
     current_user.password_hash = hash_password(body.new_password)
+    # Whole seconds -- see token_predates_password_change. This also signs the
+    # user out of their other devices on the next request / refresh.
+    current_user.password_changed_at = datetime.now(timezone.utc).replace(microsecond=0)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# How many still-valid reset requests one account may rack up inside the TTL
+# window. A crude in-app throttle -- a real rate limiter belongs at the edge.
+_MAX_ACTIVE_RESETS_PER_WINDOW = 3
+
+
+@router.post("/forgot-password", status_code=status.HTTP_202_ACCEPTED)
+def forgot_password(
+    body: ForgotPasswordRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    sender: EmailSender = Depends(get_email_sender),
+):
+    """Start a password reset.
+
+    ALWAYS returns 202 with an empty body, whether or not the email maps to an
+    account -- this endpoint must not reveal which addresses are registered
+    (same reasoning as login's single error message). The email, if any, is sent
+    from a background task *after* the response so latency doesn't leak it either.
+    """
+    email = _normalize_email(body.email)
+    now = datetime.now(timezone.utc)
+
+    user = (
+        db.query(User)
+        .filter(User.email == email, User.deleted_at.is_(None))
+        .first()
+    )
+
+    if user is not None:
+        # Throttle: cap how many reset emails one account can trigger inside the
+        # TTL window. Counts every request in the window, used or not -- the
+        # invalidation sweep below would otherwise keep the "unused" count at 1.
+        window_start = now - timedelta(
+            minutes=settings.password_reset_token_expire_minutes
+        )
+        recent = (
+            db.query(PasswordReset)
+            .filter(
+                PasswordReset.user_id == user.id,
+                PasswordReset.created_at >= window_start,
+            )
+            .count()
+        )
+        if recent < _MAX_ACTIVE_RESETS_PER_WINDOW:
+            # Invalidate this user's earlier unused links so only the newest works.
+            db.query(PasswordReset).filter(
+                PasswordReset.user_id == user.id,
+                PasswordReset.used_at.is_(None),
+            ).update({PasswordReset.used_at: now}, synchronize_session=False)
+
+            raw_token = generate_reset_token()
+            db.add(PasswordReset(
+                user_id=user.id,
+                token_hash=hash_reset_token(raw_token),
+                expires_at=now + timedelta(
+                    minutes=settings.password_reset_token_expire_minutes
+                ),
+                requested_ip=(request.client.host if request.client else None),
+            ))
+            db.commit()
+
+            background_tasks.add_task(
+                send_password_reset_email, sender, to=user.email, raw_token=raw_token
+            )
+
+    return Response(status_code=status.HTTP_202_ACCEPTED)
+
+
+@router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """Consume a reset token and set a new password.
+
+    One vague 400 for every token failure mode (unknown / expired / already
+    used) so nothing leaks. The new-password length is checked by the schema, so
+    a too-short password 422s *before* the token is spent.
+    """
+    invalid = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="This reset link is invalid or has expired. Request a new one.",
+    )
+    now = datetime.now(timezone.utc)
+
+    pr = (
+        db.query(PasswordReset)
+        .filter(PasswordReset.token_hash == hash_reset_token(body.token))
+        .first()
+    )
+    if pr is None or pr.used_at is not None or pr.expires_at <= now:
+        raise invalid
+
+    user = (
+        db.query(User)
+        .filter(User.id == pr.user_id, User.deleted_at.is_(None))
+        .first()
+    )
+    if user is None:
+        raise invalid
+
+    user.password_hash = hash_password(body.new_password)
+    # Whole seconds -- see token_predates_password_change. Ends every session
+    # that was open before this reset (the point of "reset my stolen laptop").
+    user.password_changed_at = now.replace(microsecond=0)
+
+    pr.used_at = now
+    # Burn this user's other outstanding links too.
+    db.query(PasswordReset).filter(
+        PasswordReset.user_id == user.id,
+        PasswordReset.used_at.is_(None),
+    ).update({PasswordReset.used_at: now}, synchronize_session=False)
+
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

@@ -73,6 +73,53 @@ class User(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Set whenever the password changes (the reset flow or change-password).
+    # Any access / refresh token whose "issued at" time is older than this is
+    # rejected -- see deps.py and the /refresh route. NULL = never changed since
+    # the account was created (no token is older than "never").
+    password_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class PasswordReset(Base):
+    """One outstanding "I forgot my password" request.
+
+    The raw token is emailed to the user and NEVER stored. We keep only its
+    SHA-256 hex digest: the token is 256 bits of CSPRNG output (nothing to
+    dictionary-attack, unlike a password), and a plain digest lets us find the
+    row with a single indexed equality match instead of scanning + verifying.
+    These rows are ephemeral bookkeeping, not synced user content, so there is
+    no `deleted_at` -- consumed / expired rows are hard-purged on startup.
+    """
+
+    __tablename__ = "password_resets"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), index=True, nullable=False
+    )
+    # SHA-256 hex digest of the emailed token (64 chars). Unique + indexed so
+    # reset-password is one indexed lookup.
+    token_hash: Mapped[str] = mapped_column(
+        String, unique=True, index=True, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    # NULL = still usable. A timestamp = already consumed, or invalidated by a
+    # newer request / a successful reset.
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Best-effort record of who asked, for later abuse investigation. Optional.
+    requested_ip: Mapped[str | None] = mapped_column(String, nullable=True)
+
 
 class Exercise(Base):
     """The exercise library. One shared, global table -- every user sees every

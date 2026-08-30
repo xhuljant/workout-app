@@ -34,6 +34,21 @@ const nameField = document.getElementById("name-field");
 const form = document.getElementById("auth-form");
 const submitBtn = document.getElementById("submit");
 const messageEl = document.getElementById("message");
+
+// Forgot / reset password (peers of the auth form, shown on the logged-out screen)
+const forgotRow = document.getElementById("forgot-row");
+const forgotLink = document.getElementById("forgot-link");
+const forgotView = document.getElementById("forgot-view");
+const forgotForm = document.getElementById("forgot-form");
+const forgotEmailInput = document.getElementById("forgot-email");
+const forgotMsg = document.getElementById("forgot-msg");
+const forgotBackBtn = document.getElementById("forgot-back");
+const resetView = document.getElementById("reset-view");
+const resetForm = document.getElementById("reset-form");
+const resetNewPwInput = document.getElementById("reset-new-pw");
+const resetMsg = document.getElementById("reset-msg");
+const resetBackBtn = document.getElementById("reset-back");
+let pendingResetToken = null;
 const home = document.getElementById("home");
 const whoEl = document.getElementById("who");
 const menuBtn = document.getElementById("menu-btn");
@@ -223,8 +238,103 @@ function setMode(next) {
   nameField.hidden = !registering;                       // name is only needed to register
   submitBtn.textContent = registering ? "Create account" : "Log in";
   passwordInput.autocomplete = registering ? "new-password" : "current-password";
+  forgotRow.hidden = registering;                        // "Forgot password?" is a login-only affordance
   showMessage("");                                       // clear any old error
 }
+
+// --- Forgot / reset password views ------------------------------------------
+// Three logged-out screens share the card: the auth form, #forgot-view (ask for
+// an email), and #reset-view (set a new password, reached from the email link).
+
+function showAuthLogin() {
+  pendingResetToken = null;
+  forgotView.hidden = true;
+  resetView.hidden = true;
+  form.hidden = false;
+  tabsEl.hidden = false;
+  setMode("login");
+}
+
+function showForgotView() {
+  form.hidden = true;
+  tabsEl.hidden = true;
+  resetView.hidden = true;
+  forgotView.hidden = false;
+  forgotMsg.textContent = "";
+  forgotEmailInput.value = document.getElementById("email").value.trim();
+}
+
+function showResetView(token) {
+  pendingResetToken = token;
+  form.hidden = true;
+  tabsEl.hidden = true;
+  forgotView.hidden = true;
+  resetView.hidden = false;
+  resetMsg.textContent = "";
+  resetNewPwInput.value = "";
+}
+
+forgotLink.addEventListener("click", showForgotView);
+forgotBackBtn.addEventListener("click", showAuthLogin);
+resetBackBtn.addEventListener("click", () => {
+  history.replaceState({}, "", location.pathname);
+  showAuthLogin();
+});
+
+forgotForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const btn = document.getElementById("forgot-submit");
+  btn.disabled = true;
+  try {
+    await fetch(API + "/forgot-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: forgotEmailInput.value.trim() }),
+    });
+    // Always the same message, whatever the server did -- it deliberately won't
+    // say whether the address has an account.
+    setMsg(forgotMsg,
+      "If that email has an account, a reset link is on its way. Check your inbox.",
+      "ok");
+  } catch (err) {
+    setMsg(forgotMsg, "Could not reach the server.");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+resetForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const btn = document.getElementById("reset-submit");
+  if (resetNewPwInput.value.length < 8) {
+    setMsg(resetMsg, "Password must be at least 8 characters.");
+    return;
+  }
+  btn.disabled = true;
+  try {
+    const res = await fetch(API + "/reset-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: pendingResetToken,
+        new_password: resetNewPwInput.value,
+      }),
+    });
+    if (res.status === 204) {
+      history.replaceState({}, "", location.pathname);
+      store.clear();                    // any old tokens are dead now anyway
+      showAuthLogin();
+      showMessage("Password updated. Log in with your new password.", "ok");
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    setMsg(resetMsg, detailToText(data.detail) || "Could not reset password.");
+  } catch (err) {
+    setMsg(resetMsg, "Could not reach the server.");
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 // Show an error (red) or an "ok" message (green).
 function showMessage(text, kind = "error") {
@@ -449,6 +559,8 @@ function showLoggedIn(user) {
 function showLoggedOut() {
   form.hidden = false;
   tabsEl.hidden = false;
+  forgotView.hidden = true;
+  resetView.hidden = true;
   for (const v of ALL_VIEWS) v.hidden = true;
   menuBtn.hidden = true;
   closeSideMenu();
@@ -4058,8 +4170,15 @@ settingsImportFile.addEventListener("change", async () => {
   }
 });
 
-// --- On load: if we hold either token, try to use it --------------------
-if (store.access || store.refresh) {
+// --- On load ------------------------------------------------------------
+const bootResetToken = new URLSearchParams(location.search).get("reset_token");
+if (bootResetToken) {
+  // Arrived from the emailed link. Show the "set a new password" form even over
+  // a stale session, and strip the token from the address bar so it isn't
+  // bookmarked, shoulder-surfed, or leaked in a Referer header.
+  history.replaceState({}, "", location.pathname);
+  showResetView(bootResetToken);
+} else if (store.access || store.refresh) {
   // Hide the login / create-account UI straight away so it never flashes
   // before loadProfile() confirms the session and shows the home view.
   form.hidden = true;

@@ -48,6 +48,13 @@ async def lifespan(app: FastAPI):
         if purged_w or purged_m:
             print(f"Purged {purged_w} workout(s) and {purged_m} measurement(s) from Trash.")
 
+        # Password-reset rows are ephemeral: drop the ones already used or long
+        # expired so the table stays small. Cheap, bounded, once per boot.
+        db.execute(text(
+            "DELETE FROM password_resets "
+            "WHERE used_at IS NOT NULL OR expires_at < now() - interval '7 days'"
+        ))
+
         db.commit()
 
     yield
