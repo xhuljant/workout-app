@@ -1691,9 +1691,7 @@ function buildExerciseBlock(entry, exIndex) {
   const restLabel = document.createElement("button");
   restLabel.type = "button";
   restLabel.className = "exercise-rest";
-  const restOverridden = entry.rest_seconds != null;
-  restLabel.textContent =
-    `Rest Timer: ${fmtRest(workoutRestSeconds(entry))}` + (restOverridden ? "" : " (default)");
+  restLabel.textContent = `Rest Timer: ${fmtRest(workoutRestSeconds(entry))}`;
   restLabel.addEventListener("click", () => {
     openRestEditor({
       entry,
