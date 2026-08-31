@@ -13,6 +13,7 @@ every table already exists and is current.
 
 Run (inside the container) with:  uvicorn app.main:app --host 0.0.0.0 --port 8000
 """
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -21,7 +22,8 @@ from sqlalchemy import text
 
 from .database import SessionLocal
 from . import models  # noqa: F401  -- importing this registers our tables on Base
-from .routers import auth, exercises, workouts, routines, folders, measurements, data
+from .push_sender import reminder_loop
+from .routers import auth, exercises, workouts, routines, folders, measurements, data, push
 from .seed import seed_exercises
 
 
@@ -50,8 +52,17 @@ async def lifespan(app: FastAPI):
 
         db.commit()
 
+    # Background sender for "rest timer done" Web Push notifications. It no-ops
+    # internally when VAPID keys aren't configured, so it's always safe to start.
+    reminder_task = asyncio.create_task(reminder_loop())
+
     yield
-    # (nothing to clean up on shutdown yet)
+
+    reminder_task.cancel()
+    try:
+        await reminder_task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(title="Workout App API", lifespan=lifespan)
@@ -74,6 +85,7 @@ app.include_router(routines.router)
 app.include_router(folders.router)
 app.include_router(measurements.router)
 app.include_router(data.router)
+app.include_router(push.router)
 
 # Serve the login page and its CSS/JS. html=True makes a request to "/" return
 # index.html. This mount is added LAST, so it only handles paths the API didn't.

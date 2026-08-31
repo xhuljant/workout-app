@@ -388,3 +388,49 @@ class MeasurementEntry(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+
+class PushSubscription(Base):
+    """A browser Web Push subscription for one device. Used to notify the user
+    when a rest timer finishes while the app isn't in the foreground.
+
+    `endpoint` is the push service URL (unique per device+site); `p256dh` and
+    `auth` are the client's encryption keys, straight from the browser's
+    PushSubscription.toJSON(). Rows are disposable -- if a push comes back 404 /
+    410 the subscription is dead and we delete it.
+    """
+
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), index=True, nullable=False
+    )
+    endpoint: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    p256dh: Mapped[str] = mapped_column(String, nullable=False)
+    auth: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class PushReminder(Base):
+    """The single pending "rest is over" notification for a user. A user can
+    only be resting from one countdown at a time, so `user_id` is the primary
+    key -- starting a new rest replaces any existing row. The background loop in
+    main.py sends the push once `fire_at` passes, then deletes the row.
+    """
+
+    __tablename__ = "push_reminders"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True
+    )
+    fire_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

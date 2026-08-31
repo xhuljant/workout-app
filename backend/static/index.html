@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=38" />
+  <link rel="stylesheet" href="/style.css?v=41" />
 </head>
 <body>
   <main class="card">
@@ -338,6 +338,13 @@
             <option value="metric">Metric (kg, cm)</option>
           </select>
         </div>
+        <div class="field field--check">
+          <label for="set-notify">Rest timer notifications</label>
+          <label class="check-control">
+            <input id="set-notify" type="checkbox" />
+            <span>Alert with sound when a rest ends, even in the background</span>
+          </label>
+        </div>
         <p id="settings-profile-msg" class="message" role="alert" aria-live="polite"></p>
         <button id="settings-profile-save" class="submit" type="submit">Save profile</button>
       </form>
@@ -431,6 +438,7 @@
       <div id="rest-editor-value" class="rest-editor-value">1:30</div>
       <button id="rest-editor-minus" class="rest-editor-step" type="button">&minus;15 sec</button>
       <button id="rest-editor-save" class="submit" type="button">Save</button>
+      <button id="rest-editor-default" class="ghost" type="button" hidden>Use default</button>
       <button id="rest-editor-cancel" class="ghost" type="button">Cancel</button>
     </div>
   </div>
@@ -499,6 +507,6 @@
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=38"></script>
+  <script src="/app.js?v=41"></script>
 </body>
 </html>

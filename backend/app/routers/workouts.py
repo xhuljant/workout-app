@@ -92,6 +92,7 @@ def _fresh_exercises(source_exercises: list, *, keep_notes: bool) -> dict:
                 "name": entry.get("name", ""),
                 "tracking_type": entry.get("tracking_type", "weight_reps"),
                 "notes": entry.get("notes", "") if keep_notes else "",
+                "rest_seconds": entry.get("rest_seconds"),
                 "sets": [
                     {**{m: s.get(m) for m in _SET_METRICS}, "done": False}
                     for s in entry.get("sets", [])

@@ -26,10 +26,13 @@ exercise has a tracking mode — *weight × reps*, *reps only*, *time*, or
 **Live workouts**
 Start an empty session or one pre-filled from a routine. The in-progress workout
 is server-side state, so it resumes exactly where it was left after a reload, a
-closed tab, or on another device. A session shows a running duration timer, an
-adjustable rest timer, and live volume / completed-set tallies. Completed sets
-are checked for personal records; each set row shows the previous session's
-numbers and can autofill from them.
+closed tab, or on another device. A session shows a running duration timer, a
+rest timer that can be set per exercise (heavier lifts get longer rests), and
+live volume / completed-set tallies. With a VAPID keypair configured, an optional
+Web Push notification (with sound) fires when the rest timer ends while the app
+is backgrounded — see [Deployment](#deployment). Completed sets are checked for
+personal records; each set row shows the previous session's numbers and can
+autofill from them.
 
 **Routines & folders**
 Reusable templates (an ordered list of exercises with planned sets), grouped into
@@ -129,6 +132,9 @@ wiping data.
   widget (`<datalist>` is unreliable on iOS Safari).
 - `manifest.webmanifest` + theme-color meta tags make it installable
   ("Add to Home Screen").
+- `sw.js` is a minimal, push-only service worker (no offline caching): it shows
+  the "rest over" notification unless an app window is already focused. `app.js`
+  and `style.css` are cache-busted with a `?v=` query bumped on every release.
 
 ### Deployment
 
@@ -139,6 +145,105 @@ wiping data.
 | `db` | `postgres:16.6` | database; named volume `workout_db_data`; `pg_isready` healthcheck |
 | `api` | built from `backend/` | migrations + Uvicorn; `/api/health` healthcheck (runs a real `SELECT 1`) |
 | `db-backup` | `postgres:16.6` | `pg_dump` once a day into `./backups/`, 14-day retention |
+
+The `api` service must run as a **single** Uvicorn process (no `--workers`): the
+rest-timer push sender is an in-process background loop, so multiple workers
+would send each notification more than once.
+
+### HTTPS over Tailscale
+
+The app is fine on plain `http://<host>:8000` over the tailnet for normal use.
+You only need HTTPS for the rest-timer **push notifications** below — service
+workers and the Push API refuse to run outside a "secure context", and
+`http://100.x.y.z:8000` or a bare MagicDNS name doesn't count.
+
+Tailscale can front the app with a real Let's Encrypt cert for its
+`<machine>.<tailnet>.ts.net` name. TLS is terminated by `tailscaled`; the
+container still only sees plain HTTP on `:8000`, so nothing in this repo changes.
+
+1. **Admin console** — at <https://login.tailscale.com/admin/dns> enable
+   **MagicDNS** and **HTTPS Certificates**. (Without HTTPS Certificates the TLS
+   handshake fails and Safari reports "cannot establish a secure connection".)
+
+2. **On the host**, point a Tailscale HTTPS listener at the app:
+
+   ```
+   tailscale serve --bg http://localhost:8000
+   ```
+
+   Check it:
+
+   ```
+   tailscale serve status
+   # https://plex-host-pc.tailf9097.ts.net (tailnet only)
+   # |-- / proxy http://localhost:8000
+   ```
+
+   `https://` implies port 443 — that's the `tailscaled` listener; the `8000`
+   comes from the proxy rule, not the URL. Chain:
+   `Safari :443 → tailscaled (TLS) → localhost:8000 → api container`.
+
+3. **Provision the cert** (also the quickest way to see any error):
+
+   ```
+   tailscale cert plex-host-pc.tailf9097.ts.net
+   ```
+
+   Success writes `<name>.crt` / `<name>.key`. `HTTPS features are not enabled`
+   means step 1 isn't done yet.
+
+4. **On the phone**, make sure the Tailscale app is connected (not "key
+   expired"), then open the exact URL — no port, no path, all lowercase:
+   `https://plex-host-pc.tailf9097.ts.net`.
+
+To stop fronting it later: `tailscale serve reset` (clears all serve config on
+the node); `tailscale serve status` shows the current state.
+
+### Rest-timer push notifications (optional)
+
+"Rest timer notifications" (Settings → profile) uses the Web Push API
+so the alert — with sound — fires even when the PWA is backgrounded or the phone
+is locked. Off unless a VAPID keypair is configured; when unset,
+`/api/push/vapid-key` returns 404 and the toggle stays hidden.
+
+**1. Generate a VAPID keypair** (the crypto libs are in the `api` image):
+
+```
+docker compose exec api python -c "import base64; from cryptography.hazmat.primitives.asymmetric import ec; from cryptography.hazmat.primitives import serialization as s; k=ec.generate_private_key(ec.SECP256R1()); b=lambda x: base64.urlsafe_b64encode(x).decode().rstrip('='); print('VAPID_PUBLIC_KEY='+b(k.public_key().public_bytes(s.Encoding.X962, s.PublicFormat.UncompressedPoint))); print('VAPID_PRIVATE_KEY='+b(k.private_numbers().private_value.to_bytes(32,'big')))"
+```
+
+(or `docker run --rm node:20-alpine npx -y web-push generate-vapid-keys` — same
+base64url format.)
+
+**2. Put the output in `.env`** — uncomment the lines, no `#`, no extra spaces:
+
+```
+VAPID_PUBLIC_KEY=BKej…            # from step 1
+VAPID_PRIVATE_KEY=qP7J…           # from step 1
+VAPID_SUBJECT=mailto:you@example.com   # a real address; push services reject fakes
+```
+
+**3. Recreate the api container** and confirm it picked the keys up:
+
+```
+docker compose up -d api          # no --build; only env changed
+docker compose logs api --tail 30 | Select-String push
+# want:  [push] rest-timer notification sender started.
+# not:   [push] VAPID keys not set -- rest-timer notifications disabled.
+```
+
+**4. On the iPhone** (needs the HTTPS URL from the section above):
+
+- Open `https://<machine>.<tailnet>.ts.net` in Safari → Share → **Add to Home
+  Screen**. iOS 16.4+ only delivers Web Push to a home-screen-installed PWA.
+- Open it *from the Home Screen icon*, go to Settings, tick **Rest timer
+  notifications**, Save, and allow the permission prompt.
+- Test: start a workout, check a set with a short rest, lock the phone — a
+  notification with sound should arrive when the timer hits zero.
+
+The keypair is permanent. Back up `.env` with your DB dumps; regenerating the
+keys invalidates every device's subscription (each must re-toggle the setting).
+`.env` is git-ignored — keep it that way.
 
 ---
 
@@ -361,5 +466,8 @@ Environment variables (compose reads `.env` automatically):
 | `JWT_ALGORITHM` | no | `HS256` | |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | no | `15` | |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | no | `90` | |
+| `VAPID_PUBLIC_KEY` | no | — | enables rest-timer Web Push; unset = feature off |
+| `VAPID_PRIVATE_KEY` | no | — | pair with the public key; see `.env.example` |
+| `VAPID_SUBJECT` | no | `mailto:admin@example.com` | contact the push service can reach |
 
-The optional four are read by `backend/app/config.py`; the rest live in `.env`.
+The optional variables are read by `backend/app/config.py`; the rest live in `.env`.

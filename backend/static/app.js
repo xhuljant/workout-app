@@ -99,6 +99,7 @@ const restEditorPlusBtn = document.getElementById("rest-editor-plus");
 const restEditorMinusBtn = document.getElementById("rest-editor-minus");
 const restEditorSaveBtn = document.getElementById("rest-editor-save");
 const restEditorCancelBtn = document.getElementById("rest-editor-cancel");
+const restEditorDefaultBtn = document.getElementById("rest-editor-default");
 
 // Routine editor sub-view
 const newRoutineBtn = document.getElementById("new-routine");
@@ -182,6 +183,7 @@ const setNameInput = document.getElementById("set-name");
 const setEmailInput = document.getElementById("set-email");
 const setRestInput = document.getElementById("set-rest");
 const setUnitsSelect = document.getElementById("set-units");
+const setNotifyInput = document.getElementById("set-notify");
 const settingsExportBtn = document.getElementById("settings-export");
 const settingsChangePwBtn = document.getElementById("settings-change-password-btn");
 const settingsDeleteAcctBtn = document.getElementById("settings-delete-account-btn");
@@ -936,12 +938,21 @@ function fillOptions(sel, allLabel, values) {
   sel.classList.toggle("is-active", Boolean(sel.value));
 }
 
+// Every whitespace-separated word in the query must appear somewhere in the
+// name. Hyphens / punctuation are flattened to spaces on both sides, so
+// "close grip" matches "Close-Grip Bench Press" and word order doesn't matter.
+function nameMatchesQuery(name, query) {
+  const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const hay = norm(name);
+  return norm(query).split(" ").filter(Boolean).every((tok) => hay.includes(tok));
+}
+
 function applyExerciseFilters() {
   const q = exerciseSearch.value.trim().toLowerCase();
   const eq = filterEquipmentSel.value;
   const mu = filterMuscleSel.value;
   const filtered = allExercises.filter((ex) => {
-    if (q && !ex.name.toLowerCase().includes(q)) return false;
+    if (q && !nameMatchesQuery(ex.name, q)) return false;
     if (eq && ex.equipment !== eq) return false;
     if (mu && !(ex.primary_muscles || []).includes(mu)) return false;
     return true;
@@ -1680,8 +1691,15 @@ function buildExerciseBlock(entry, exIndex) {
   const restLabel = document.createElement("button");
   restLabel.type = "button";
   restLabel.className = "exercise-rest";
-  restLabel.textContent = `Rest Timer: ${fmtRest(workoutRestSeconds())}`;
-  restLabel.addEventListener("click", openRestEditor);
+  const restOverridden = entry.rest_seconds != null;
+  restLabel.textContent =
+    `Rest Timer: ${fmtRest(workoutRestSeconds(entry))}` + (restOverridden ? "" : " (default)");
+  restLabel.addEventListener("click", () => {
+    openRestEditor({
+      entry,
+      onSave: () => { renderWorkout(); scheduleSave(); },
+    });
+  });
   block.append(restLabel);
 
   const mode = trackingOf(entry);
@@ -1738,7 +1756,7 @@ function buildExerciseBlock(entry, exIndex) {
       set.done = done.checked;
       if (set.done) {
         checkForPr(entry, set, num);
-        startRestTimer();
+        startRestTimer(entry);
       } else {
         set.pr_weight = set.pr_1rm = set.pr_reps = set.pr_time = set.pr_distance = false;
         entry.done_collapsed = false;   // reopened a set -> keep the block open
@@ -1917,8 +1935,11 @@ let restTotalMs = 0;
 let restInterval = null;
 const REST_KEY = "rest";
 
-function workoutRestSeconds() {
+// Resolve the rest length for a given exercise entry: its own override first,
+// then the workout-wide value, then the user's default, then 90s.
+function workoutRestSeconds(entry) {
   return (
+    (entry && entry.rest_seconds) ||
     (activeWorkout && activeWorkout.rest_seconds) ||
     (currentUser && currentUser.preferences && currentUser.preferences.default_rest_seconds) ||
     90
@@ -1964,11 +1985,12 @@ function beginRestInterval() {
 }
 
 // Fresh countdown (a set was checked, or the label was tapped after editing).
-function startRestTimer() {
-  restTotalMs = workoutRestSeconds() * 1000;
+function startRestTimer(entry) {
+  restTotalMs = workoutRestSeconds(entry) * 1000;
   restEndsAt = Date.now() + restTotalMs;
   beginRestInterval();
   persistRest();
+  schedulePushReminder();
 }
 
 // Re-attach the bar to a countdown that's still running (entering the workout
@@ -1986,6 +2008,7 @@ function resumeRestTimer() {
   restEndsAt = saved.endsAt;
   restTotalMs = saved.totalMs || (saved.endsAt - Date.now());
   beginRestInterval();
+  schedulePushReminder();   // re-arm in case the server reminder was lost
 }
 
 function tickRest() {
@@ -2013,6 +2036,7 @@ function endRestTimer() {
   restEndsAt = 0;
   restTotalMs = 0;
   clearPersistedRest();
+  cancelPushReminder();
 }
 
 restMinusBtn.addEventListener("click", () => {
@@ -2020,20 +2044,30 @@ restMinusBtn.addEventListener("click", () => {
   restTotalMs = Math.max(15000, restTotalMs - 15000);
   persistRest();
   tickRest();
+  schedulePushReminder();
 });
 restPlusBtn.addEventListener("click", () => {
   restEndsAt += 15000;
   restTotalMs += 15000;
   persistRest();
   tickRest();
+  schedulePushReminder();
 });
 restSkipBtn.addEventListener("click", endRestTimer);
 
-// --- Rest-length editor (the "Rest Timer: ..." label opens this) ---
+// --- Rest-length editor -------------------------------------------------
+// Opened from an exercise's "Rest Timer: ..." label (in a workout or in the
+// routine editor). It always edits ONE exercise's override -- ctx.entry --
+// and calls ctx.onSave() to persist + re-render in whichever screen it was.
 let restEditorValue = 90;
+let restEditorCtx = null;
 
-function openRestEditor() {
-  restEditorValue = workoutRestSeconds();
+function openRestEditor(ctx) {
+  restEditorCtx = ctx || null;
+  const entry = restEditorCtx && restEditorCtx.entry;
+  restEditorValue = entry && entry.rest_seconds != null
+    ? entry.rest_seconds
+    : workoutRestSeconds();          // seed from the fallback value
   renderRestEditor();
   openOverlay(restEditorEl);
 }
@@ -2041,6 +2075,10 @@ function renderRestEditor() {
   restEditorValueEl.textContent = formatDuration(restEditorValue * 1000);
   restEditorMinusBtn.disabled = restEditorValue <= 15;
   restEditorPlusBtn.disabled = restEditorValue >= 3600;
+  const entry = restEditorCtx && restEditorCtx.entry;
+  if (restEditorDefaultBtn) {
+    restEditorDefaultBtn.hidden = !(entry && entry.rest_seconds != null);
+  }
 }
 restEditorPlusBtn.addEventListener("click", () => {
   restEditorValue = Math.min(3600, restEditorValue + 15);
@@ -2054,31 +2092,127 @@ restEditorCancelBtn.addEventListener("click", () => closeOverlay(restEditorEl));
 restEditorEl.addEventListener("click", (e) => {
   if (e.target === restEditorEl) closeOverlay(restEditorEl);   // tap the backdrop
 });
-restEditorSaveBtn.addEventListener("click", async () => {
+
+function commitRestEditor(value) {
   closeOverlay(restEditorEl);
-  if (!activeWorkout) return;
-  activeWorkout.rest_seconds = restEditorValue;
-  renderWorkout();   // refresh every "Rest Timer: ..." label
+  const ctx = restEditorCtx;
+  if (!ctx || !ctx.entry) return;
+  ctx.entry.rest_seconds = value;   // number, or null to fall back to the default
+  if (typeof ctx.onSave === "function") ctx.onSave();
+}
+restEditorSaveBtn.addEventListener("click", () => commitRestEditor(restEditorValue));
+if (restEditorDefaultBtn) {
+  restEditorDefaultBtn.addEventListener("click", () => commitRestEditor(null));
+}
+
+// --- Rest-timer push notifications -------------------------------------
+// While a rest countdown runs we register a one-shot server-side reminder; the
+// backend sends a Web Push when it fires, so iOS shows a notification with sound
+// even if the PWA is backgrounded or closed. The service worker suppresses it if
+// a window is still focused (the in-app countdown already handled that case).
+let swRegistration = null;
+
+function pushEnabledPref() {
+  return Boolean(currentUser && currentUser.preferences
+    && currentUser.preferences.rest_push_enabled);
+}
+
+function pushReady() {
+  return Boolean(
+    swRegistration &&
+    pushEnabledPref() &&
+    "Notification" in window &&
+    Notification.permission === "granted",
+  );
+}
+
+async function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
   try {
-    const body = { content: activeWorkout.content, rest_seconds: restEditorValue };
-    if (typeof activeWorkout.content_version === "number") {
-      body.content_version = activeWorkout.content_version;
-    }
-    const res = await authFetch(WORKOUTS_API + "/active", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+    swRegistration = await navigator.serviceWorker.register("/sw.js");
+  } catch (err) {
+    swRegistration = null;   // insecure context (plain http) etc.
+  }
+}
+
+function urlB64ToUint8Array(base64) {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(b64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+// Turn push on: permission -> browser subscription -> tell the server.
+// Throws with a user-facing message on any failure.
+async function enablePushSubscription() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    throw new Error("This device doesn't support background notifications.");
+  }
+  if (!swRegistration) await registerServiceWorker();
+  if (!swRegistration) {
+    throw new Error("Notifications need the app served over HTTPS.");
+  }
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") throw new Error("Notification permission was denied.");
+
+  const keyRes = await authFetch("/api/push/vapid-key");
+  if (!keyRes.ok) throw new Error("Notifications aren't set up on the server.");
+  const { key } = await keyRes.json();
+
+  let sub = await swRegistration.pushManager.getSubscription();
+  if (!sub) {
+    sub = await swRegistration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlB64ToUint8Array(key),
     });
-    if (res.ok) {
-      const saved = await res.json().catch(() => null);
-      if (saved && activeWorkout) activeWorkout.content_version = saved.content_version;
-      clearWal(activeWorkout && activeWorkout.id);
-      setSaveState("saved");
-    } else if (res.status === 409) {
-      await handleSaveConflict(activeWorkout.id, res);
-    }
-  } catch (err) { /* the label already updated locally; a later save will sync */ }
+  }
+  const res = await authFetch("/api/push/subscribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(sub.toJSON()),
+  });
+  if (!res.ok) throw new Error("Could not register this device.");
+}
+
+async function disablePushSubscription() {
+  try {
+    if (!swRegistration) return;
+    const sub = await swRegistration.pushManager.getSubscription();
+    if (!sub) return;
+    await authFetch("/api/push/unsubscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: sub.endpoint }),
+    }).catch(() => {});
+    await sub.unsubscribe().catch(() => {});
+  } catch (err) { /* best effort */ }
+}
+
+// Fire-and-forget: (re)arm the server reminder for the running countdown.
+function schedulePushReminder() {
+  if (!pushReady() || !restInterval || restEndsAt <= Date.now()) return;
+  authFetch("/api/push/reminder", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fire_at: new Date(restEndsAt).toISOString() }),
+  }).catch(() => {});
+}
+
+function cancelPushReminder() {
+  if (!currentUser || !("serviceWorker" in navigator)) return;
+  authFetch("/api/push/reminder", { method: "DELETE" }).catch(() => {});
+}
+
+// Back to the foreground mid-rest: keep the server reminder in sync.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && restInterval && restEndsAt > Date.now()) {
+    schedulePushReminder();
+  }
 });
+
+registerServiceWorker();
 
 // --- Saving --------------------------------------------------------------
 // Every edit is mirrored to localStorage FIRST (a write-ahead log), then pushed
@@ -2806,6 +2940,17 @@ function buildRoutineExerciseBlock(entry, exIndex) {
 
   head.append(name, controls);
   block.append(head);
+
+  const restLabel = document.createElement("button");
+  restLabel.type = "button";
+  restLabel.className = "exercise-rest";
+  restLabel.textContent = entry.rest_seconds != null
+    ? `Rest Timer: ${fmtRest(entry.rest_seconds)}`
+    : "Rest Timer: default";
+  restLabel.addEventListener("click", () => {
+    openRestEditor({ entry, onSave: renderRoutineEditor });
+  });
+  block.append(restLabel);
 
   const mode = trackingOf(entry);
   const t = TRACKING[mode];
@@ -3871,6 +4016,12 @@ function openSettings() {
   setEmailInput.value = currentUser?.email || "";
   setRestInput.value = currentUser?.preferences?.default_rest_seconds ?? 90;
   setUnitsSelect.value = currentUser?.preferences?.measurement_units === "metric" ? "metric" : "imperial";
+  if (setNotifyInput) {
+    // Always interactive: turning the setting OFF never needs a service worker.
+    // Turning it ON is validated in the save handler (enablePushSubscription
+    // throws a clear message and reverts the box on an unsupported / http origin).
+    setNotifyInput.checked = pushEnabledPref();
+  }
   settingsProfileMsg.textContent = "";
 }
 
@@ -3900,12 +4051,31 @@ settingsProfileForm.addEventListener("submit", async (event) => {
   setMsg(settingsProfileMsg, "");
 
   const rest = Math.max(0, Math.min(600, parseInt(setRestInput.value, 10) || 0));
+
+  // The notifications toggle needs a browser permission + subscription before we
+  // can persist it as "on". Do that first; bail out of the whole save if the
+  // user denies permission or the server has push disabled.
+  const wantNotify = Boolean(setNotifyInput && setNotifyInput.checked);
+  if (wantNotify && !pushEnabledPref()) {
+    try {
+      await enablePushSubscription();
+    } catch (err) {
+      setMsg(settingsProfileMsg, err.message || "Could not enable notifications.");
+      if (setNotifyInput) setNotifyInput.checked = false;
+      saveBtn.disabled = false;
+      return;
+    }
+  } else if (!wantNotify && pushEnabledPref()) {
+    await disablePushSubscription();
+  }
+
   const payload = {
     display_name: setNameInput.value.trim(),
     email: setEmailInput.value.trim(),
     preferences: {
       default_rest_seconds: rest,
       measurement_units: setUnitsSelect.value === "metric" ? "metric" : "imperial",
+      rest_push_enabled: wantNotify,
     },
   };
   try {
@@ -3922,6 +4092,7 @@ settingsProfileForm.addEventListener("submit", async (event) => {
     currentUser = data;
     whoEl.textContent = currentUser.display_name;
     setRestInput.value = currentUser.preferences?.default_rest_seconds ?? rest;
+    if (setNotifyInput) setNotifyInput.checked = pushEnabledPref();
     setMsg(settingsProfileMsg, "Saved.", "ok");
   } catch (err) {
     setMsg(settingsProfileMsg, err.message || "Could not reach the server.");

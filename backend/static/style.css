@@ -200,6 +200,40 @@ body {
 }
 .message[data-kind="ok"] { color: var(--ok); }
 
+/* Checkbox styled to match the text inputs (Settings > "Rest timer notifications").
+   The header <label> keeps the normal .field label look; the control row below
+   borrows the input box styling so it lines up with the fields around it. */
+.field--check .check-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text);
+  margin-bottom: 0;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.field--check .check-control input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.field--check .check-control input:focus { box-shadow: none; }
+.field--check .check-control:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.25);
+}
+.field--check .check-control input:disabled ~ span { opacity: 0.5; }
+
 /* Primary button */
 .submit {
   width: 100%;

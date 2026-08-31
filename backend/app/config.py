@@ -29,6 +29,20 @@ class Settings(BaseSettings):
     # access token whenever the short one expires.
     refresh_token_expire_days: int = 90
 
+    # --- Web Push (optional) ---------------------------------------------------
+    # VAPID keypair for sending "rest timer done" push notifications. When either
+    # key is unset, push is disabled: the /api/push endpoints no-op and the
+    # background reminder loop does nothing. Generate a pair with:
+    #   python -c "from py_vapid import Vapid01; v=Vapid01(); v.generate_keys(); \
+    #     import base64; \
+    #     print('public =', base64.urlsafe_b64encode(v.public_key.public_bytes(2,4)).decode().rstrip('=')); \
+    #     print('private=', base64.urlsafe_b64encode(v.private_key.private_numbers().private_value.to_bytes(32,'big')).decode().rstrip('='))"
+    # or `npx web-push generate-vapid-keys`.
+    vapid_public_key: str | None = None
+    vapid_private_key: str | None = None
+    # "mailto:" address (or https URL) the push service can contact about your app.
+    vapid_subject: str = "mailto:admin@example.com"
+
     # Also read a local ".env" file if one exists (handy when running without Docker).
     # extra="ignore" means unrelated env vars won't cause an error.
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

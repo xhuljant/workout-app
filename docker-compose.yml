@@ -37,6 +37,11 @@ services:
       # database container on the internal docker network.
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       JWT_SECRET: ${JWT_SECRET}
+      # Optional: Web Push for "rest timer done" notifications. Leave unset to
+      # disable the feature. See .env.example for how to generate a keypair.
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
     ports:
       # host:container -> open http://localhost:8000 in your browser.
       - "8000:8000"

@@ -137,6 +137,9 @@ class WorkoutExerciseEntry(BaseModel):
     tracking_type: str = "weight_reps"
     notes: str = ""
     sets: list[WorkoutSet] = Field(default_factory=list)
+    # Per-exercise rest override. NULL = fall back to the workout's rest_seconds,
+    # then the user's default. Heavier lifts often want a longer rest.
+    rest_seconds: int | None = Field(default=None, ge=0, le=3600)
 
 
 class WorkoutContent(BaseModel):
@@ -307,6 +310,8 @@ class RoutineExerciseEntry(BaseModel):
     name: str
     tracking_type: str = "weight_reps"
     sets: list[RoutineSet] = Field(default_factory=list)
+    # Per-exercise rest override, carried into workouts started from this routine.
+    rest_seconds: int | None = Field(default=None, ge=0, le=3600)
 
 
 class RoutineContent(BaseModel):
@@ -420,3 +425,24 @@ class DataImportResult(BaseModel):
     """Per-table counts from an import. Merge-by-id: existing rows are left alone."""
     inserted: dict[str, int]
     skipped: dict[str, int]
+
+
+# --- Web Push -------------------------------------------------------------------
+class PushSubscriptionKeys(BaseModel):
+    p256dh: str
+    auth: str
+
+
+class PushSubscriptionIn(BaseModel):
+    """Straight from the browser's PushSubscription.toJSON()."""
+    endpoint: str
+    keys: PushSubscriptionKeys
+
+
+class PushUnsubscribeIn(BaseModel):
+    endpoint: str
+
+
+class PushReminderIn(BaseModel):
+    """When the current rest countdown will finish."""
+    fire_at: datetime

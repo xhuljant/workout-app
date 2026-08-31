@@ -35,6 +35,8 @@ _WIPE = [
     "DELETE FROM workouts",
     "DELETE FROM routines",
     "DELETE FROM folders",
+    "DELETE FROM push_reminders",
+    "DELETE FROM push_subscriptions",
     "DELETE FROM exercises WHERE is_custom = true OR created_by IS NOT NULL",
     "DELETE FROM users",
 ]
