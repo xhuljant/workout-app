@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=42" />
+  <link rel="stylesheet" href="/style.css?v=44" />
 </head>
 <body>
   <main class="card">
@@ -262,17 +262,41 @@
       <div id="calendar-scroll" class="calendar-scroll"></div>
     </section>
 
-    <!-- Body measurements: opened from the ☰ menu. -->
+    <!-- Progress: exercise progress, body measurements, progress photos.
+         Opened from the ☰ menu. -->
     <section id="measurements-view" class="subview" hidden>
       <div class="subview-head">
         <button id="measurements-back" class="ghost" type="button" aria-label="Back to home">&larr;</button>
-        <h2 class="subview-title">Measurements</h2>
+        <h2 class="subview-title">Progress</h2>
+        <button id="measurements-compare-btn" class="ghost" type="button" hidden>Compare</button>
         <button id="measurements-add-btn" class="ghost" type="button">Add</button>
       </div>
+
+      <!-- Exercises / Measurements / Photos switch. Compare mode hides this row. -->
+      <div id="measurements-tabs" class="tabs" role="tablist" aria-label="Progress view">
+        <button id="measurements-tab-exercises" class="tab" type="button" role="tab">Exercises</button>
+        <button id="measurements-tab-list" class="tab is-active" type="button" role="tab">Measurements</button>
+        <button id="measurements-tab-photos" class="tab" type="button" role="tab">Photos</button>
+      </div>
+
+      <!-- Exercises mode: pick a lift you've logged to see its progress. -->
+      <div id="progress-exercises" hidden>
+        <input id="progress-exercise-search" class="progress-exercise-search" type="text"
+               placeholder="Search your exercises…" autocomplete="off" />
+        <div id="progress-exercise-list" class="progress-exercise-list"></div>
+      </div>
+
+      <!-- Measurements mode -->
       <div id="measurements-chart" class="measurements-chart"></div>
       <div id="measurements-filter" class="measurements-filter"></div>
       <p id="measurements-status" class="exercise-status" aria-live="polite"></p>
       <div id="measurements-list" class="routine-list"></div>
+
+      <!-- Photos mode: scrollable, date-ordered progress-photo timeline. -->
+      <div id="measurements-photos" class="photo-timeline" hidden></div>
+
+      <!-- Compare mode: two dates side by side. -->
+      <div id="measurements-compare" class="photo-compare" hidden></div>
     </section>
 
     <!-- Add / edit a measurement entry -- its own screen, reached from Measurements. -->
@@ -450,16 +474,20 @@
         <button id="menu-close" class="side-menu-close" type="button" aria-label="Close menu">&larr; Back</button>
         <button id="menu-settings" class="side-menu-item" type="button">Settings</button>
         <button id="menu-calendar" class="side-menu-item" type="button">Calendar</button>
-        <button id="menu-measurements" class="side-menu-item" type="button">Measurements</button>
+        <button id="menu-measurements" class="side-menu-item" type="button">Progress</button>
         <button id="menu-trash" class="side-menu-item" type="button">Trash</button>
       </div>
       <button id="menu-logout" class="side-menu-item side-menu-item--danger" type="button">Log out</button>
     </nav>
   </div>
 
-  <!-- Full-size progress photo, tapped from a measurement entry. -->
+  <!-- Full-size progress photo, tapped from a measurement entry. Left/right
+       edges page through the set; centre / backdrop / Esc close. -->
   <div id="measurement-photo-viewer" class="measurement-photo-viewer" hidden>
     <img id="measurement-photo-viewer-img" alt="Progress photo" />
+    <button id="measurement-photo-viewer-prev" class="photo-viewer-zone photo-viewer-zone--prev" type="button" aria-label="Previous photo"></button>
+    <button id="measurement-photo-viewer-next" class="photo-viewer-zone photo-viewer-zone--next" type="button" aria-label="Next photo"></button>
+    <span id="measurement-photo-viewer-count" class="photo-viewer-count" hidden></span>
   </div>
 
   <!-- Asked when a calendar day has more than one workout. -->
@@ -507,6 +535,6 @@
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=42"></script>
+  <script src="/app.js?v=44"></script>
 </body>
 </html>

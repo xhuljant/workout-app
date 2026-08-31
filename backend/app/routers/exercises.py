@@ -16,6 +16,7 @@ from ..deps import get_current_user
 from ..models import Exercise, Routine, User, Workout
 from ..schemas import (
     ExerciseCreate,
+    ExerciseHistoryItem,
     ExercisePublic,
     ExerciseSessionStat,
     ExerciseStats,
@@ -42,6 +43,69 @@ def list_exercises(
         query = query.filter(Exercise.name.ilike(f"%{q.strip()}%"))
 
     return query.order_by(func.lower(Exercise.name)).all()
+
+
+@router.get("/history", response_model=list[ExerciseHistoryItem])
+def exercise_history(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Every exercise the current user has completed at least one set of, in a
+    finished non-deleted workout -- most recent activity first. Feeds the
+    Progress screen's Exercises tab. Declared before /{exercise_id}/stats so
+    "history" isn't parsed as an id.
+    """
+    workouts = (
+        db.query(Workout)
+        .filter(
+            Workout.user_id == current_user.id,
+            Workout.status == "finished",
+            Workout.deleted_at.is_(None),
+        )
+        .all()
+    )
+
+    # exercise_id (str) -> {"last": datetime, "count": int}
+    seen: dict[str, dict] = {}
+    for w in workouts:
+        when = w.finished_at or w.started_at
+        for entry in (w.content or {}).get("exercises", []):
+            ex_id = str(entry.get("exercise_id") or "")
+            if not ex_id:
+                continue
+            if not any(s.get("done") for s in entry.get("sets", [])):
+                continue
+            agg = seen.setdefault(ex_id, {"last": when, "count": 0})
+            agg["count"] += 1
+            if when and (agg["last"] is None or when > agg["last"]):
+                agg["last"] = when
+
+    if not seen:
+        return []
+
+    ids = []
+    for k in seen:
+        try:
+            ids.append(uuid.UUID(k))
+        except ValueError:
+            pass
+    rows = (
+        db.query(Exercise)
+        .filter(Exercise.id.in_(ids), Exercise.deleted_at.is_(None))
+        .all()
+    )
+    items = [
+        ExerciseHistoryItem(
+            id=ex.id,
+            name=ex.name,
+            tracking_type=ex.tracking_type,
+            last_performed=seen[str(ex.id)]["last"],
+            session_count=seen[str(ex.id)]["count"],
+        )
+        for ex in rows
+    ]
+    items.sort(key=lambda i: i.last_performed, reverse=True)
+    return items
 
 
 @router.get("/{exercise_id}/stats", response_model=ExerciseStats)

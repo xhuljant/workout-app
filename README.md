@@ -44,9 +44,16 @@ A finished-workout list with a detail view, per-exercise statistics (heaviest
 set, best estimated 1RM, totals, etc.) with an inline progress chart, and a
 training calendar.
 
-**Body measurements**
-Dated entries stored in canonical units (kg / cm / %) and converted to the user's
-preferred units for display, with up to four progress photos per entry.
+**Progress** (☰ menu)
+Three tabs:
+- **Exercises** — pick any lift you've logged to see its stat tiles, progress
+  chart, and per-session history (read-only).
+- **Measurements** — dated body-measurement entries in canonical units
+  (kg / cm / %), converted to the user's preferred units, with up to four
+  progress photos each; a chosen metric is charted over time.
+- **Photos** — a date-ordered progress-photo timeline with each day's numbers
+  beside it, a swipeable full-screen viewer, and a two-date **Compare** view
+  with per-measurement deltas.
 
 **Data ownership**
 CSV export of every logged set; full-account JSON export and import

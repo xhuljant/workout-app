@@ -241,6 +241,16 @@ class MeasurementPublic(MeasurementListItem):
     photos: list[str]
 
 
+class MeasurementPhotosItem(BaseModel):
+    """One dated entry for the progress-photo timeline: its photos plus that
+    day's values, so the client can show them side by side without a per-entry
+    round trip. Only entries that actually have photos are returned."""
+    id: uuid.UUID
+    measured_on: date
+    values: dict[str, float]
+    photos: list[str]
+
+
 class MeasurementTrashItem(BaseModel):
     """A soft-deleted measurement entry, for the Trash screen."""
     id: uuid.UUID
@@ -258,6 +268,16 @@ class ExercisePrevious(BaseModel):
     best_reps: int | None = None
     best_seconds: int | None = None
     best_distance: float | None = None
+
+
+class ExerciseHistoryItem(BaseModel):
+    """One exercise the user has actually performed -- feeds the Progress screen's
+    Exercises tab picker. Newest activity first."""
+    id: uuid.UUID
+    name: str
+    tracking_type: str
+    last_performed: datetime
+    session_count: int
 
 
 class ExerciseSessionStat(BaseModel):

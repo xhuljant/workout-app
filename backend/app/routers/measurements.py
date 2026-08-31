@@ -16,6 +16,7 @@ from ..models import MeasurementEntry, User
 from ..schemas import (
     MeasurementCreate,
     MeasurementListItem,
+    MeasurementPhotosItem,
     MeasurementPublic,
     MeasurementTrashItem,
 )
@@ -67,6 +68,41 @@ def list_measurements(
             created_at=r.created_at,
         )
         for r in rows
+    ]
+
+
+@router.get("/photos", response_model=list[MeasurementPhotosItem])
+def list_measurement_photos(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Every entry that has at least one progress photo, newest first, with the
+    photo blobs and that day's values -- feeds the progress-photo timeline.
+
+    Declared before GET /{entry_id} so "photos" isn't parsed as an entry id.
+    """
+    rows = (
+        db.query(MeasurementEntry)
+        .filter(
+            MeasurementEntry.user_id == current_user.id,
+            MeasurementEntry.deleted_at.is_(None),
+            func.jsonb_array_length(MeasurementEntry.photos) > 0,
+        )
+        .order_by(
+            MeasurementEntry.measured_on.desc(),
+            MeasurementEntry.created_at.desc(),
+        )
+        .all()
+    )
+    return [
+        MeasurementPhotosItem(
+            id=r.id,
+            measured_on=r.measured_on,
+            values=r.values or {},
+            photos=r.photos or [],
+        )
+        for r in rows
+        if r.photos
     ]
 
 

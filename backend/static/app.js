@@ -159,6 +159,16 @@ const measurementsChartEl = document.getElementById("measurements-chart");
 const measurementsFilterEl = document.getElementById("measurements-filter");
 const measurementsStatusEl = document.getElementById("measurements-status");
 const measurementsListEl = document.getElementById("measurements-list");
+const measurementsTabsEl = document.getElementById("measurements-tabs");
+const measurementsTabExercisesBtn = document.getElementById("measurements-tab-exercises");
+const measurementsTabListBtn = document.getElementById("measurements-tab-list");
+const measurementsTabPhotosBtn = document.getElementById("measurements-tab-photos");
+const progressExercisesEl = document.getElementById("progress-exercises");
+const progressExerciseSearchEl = document.getElementById("progress-exercise-search");
+const progressExerciseListEl = document.getElementById("progress-exercise-list");
+const measurementsCompareBtn = document.getElementById("measurements-compare-btn");
+const measurementsPhotosEl = document.getElementById("measurements-photos");
+const measurementsCompareEl = document.getElementById("measurements-compare");
 const measurementEditorView = document.getElementById("measurement-editor-view");
 const measurementEditorBackBtn = document.getElementById("measurement-editor-back");
 const measurementEditBtn = document.getElementById("measurement-editor-edit-btn");
@@ -173,6 +183,9 @@ const measurementSaveBtn = document.getElementById("measurement-save");
 const measurementDeleteBtn = document.getElementById("measurement-delete");
 const measurementPhotoViewerEl = document.getElementById("measurement-photo-viewer");
 const measurementPhotoViewerImg = document.getElementById("measurement-photo-viewer-img");
+const measurementPhotoViewerPrev = document.getElementById("measurement-photo-viewer-prev");
+const measurementPhotoViewerNext = document.getElementById("measurement-photo-viewer-next");
+const measurementPhotoViewerCount = document.getElementById("measurement-photo-viewer-count");
 
 // Settings sub-view (+ its Change password / Delete account pages)
 const settingsView = document.getElementById("settings-view");
@@ -1054,7 +1067,7 @@ function renderExercises(items, isFiltered) {
 
 const exerciseStatsCache = new Map();
 
-async function loadExerciseDetail(ex, body) {
+async function loadExerciseDetail(ex, body, opts = {}) {
   body.textContent = "Loading…";
   let stats = exerciseStatsCache.get(ex.id);
   if (!stats) {
@@ -1068,7 +1081,7 @@ async function loadExerciseDetail(ex, body) {
       return;
     }
   }
-  renderExerciseDetail(ex, body, stats);
+  renderExerciseDetail(ex, body, stats, opts);
 }
 
 function statTile(label, value) {
@@ -1084,12 +1097,13 @@ function statTile(label, value) {
   return tile;
 }
 
-function renderExerciseDetail(ex, body, stats) {
+function renderExerciseDetail(ex, body, stats, opts = {}) {
   body.replaceChildren();
 
   // Custom exercises can be edited or deleted by anyone (the library is shared);
   // seeded library rows are read-only. Shown even with no history yet.
-  if (ex.is_custom) {
+  // The Progress screen passes progressOnly -- a read-only view, no edit/delete.
+  if (ex.is_custom && !opts.progressOnly) {
     const actions = document.createElement("div");
     actions.className = "exercise-detail-actions";
 
@@ -1206,32 +1220,35 @@ function renderExerciseDetail(ex, body, stats) {
       { weight: s.top_weight, reps: s.top_reps, seconds: s.top_seconds, distance: s.top_distance },
       mode,
     )}` + (mode === "weight_reps" ? `  ·  ${fmtVolume(s.volume)}` : "");
+    rowEl.append(main);
 
-    const del = document.createElement("button");
-    del.type = "button";
-    del.className = "exercise-session-del";
-    del.textContent = "✕";
-    del.setAttribute("aria-label", "Delete this workout");
-    del.addEventListener("click", async () => {
-      if (!(await appConfirm({
-        title: "Delete workout?",
-        body: "It's removed from your history everywhere.",
-        confirmLabel: "Delete",
-        danger: true,
-      }))) return;
-      try {
-        const res = await authFetch(`${WORKOUTS_API}/${s.workout_id}`, { method: "DELETE" });
-        if (res.status !== 204 && res.status !== 404) return;
-        exerciseStatsCache.delete(ex.id);
-        loadExerciseDetail(ex, body);
-        loadHomeHistory();
-        showToast("Workout deleted");
-      } catch (err) {
-        /* ignore */
-      }
-    });
+    if (!opts.progressOnly) {
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "exercise-session-del";
+      del.textContent = "✕";
+      del.setAttribute("aria-label", "Delete this workout");
+      del.addEventListener("click", async () => {
+        if (!(await appConfirm({
+          title: "Delete workout?",
+          body: "It's removed from your history everywhere.",
+          confirmLabel: "Delete",
+          danger: true,
+        }))) return;
+        try {
+          const res = await authFetch(`${WORKOUTS_API}/${s.workout_id}`, { method: "DELETE" });
+          if (res.status !== 204 && res.status !== 404) return;
+          exerciseStatsCache.delete(ex.id);
+          loadExerciseDetail(ex, body);
+          loadHomeHistory();
+          showToast("Workout deleted");
+        } catch (err) {
+          /* ignore */
+        }
+      });
+      rowEl.append(del);
+    }
 
-    rowEl.append(main, del);
     list.append(rowEl);
   });
   body.append(list);
@@ -3524,12 +3541,69 @@ let measurementPhotos = [];        // base64 data URLs, up to MEASUREMENT_MAX_PH
 let measurementEditId = null;      // id when editing an entry, null when adding
 let measurementEditMode = true;    // false = viewing an existing entry read-only
 
+// The Progress screen's tab: "exercises" | "measurements" | "photos" | "compare"
+// ("compare" is a sub-mode of photos and is never persisted).
+let measurementsMode =
+  (() => {
+    try {
+      const v = localStorage.getItem("measurementsMode");
+      return v === "list" ? "measurements" : (v || "measurements");   // migrate old value
+    } catch (e) { return "measurements"; }
+  })();
+if (measurementsMode === "compare") measurementsMode = "photos";
+let photoFeed = [];                // [{id, measured_on, values, photos[]}] newest-first
+let photoFeedLoaded = false;
+const comparePick = { a: null, b: null };   // entry ids chosen in Compare
+let exerciseHistory = [];          // [{id, name, tracking_type, last_performed, session_count}]
+let exerciseHistoryLoaded = false;
+
 menuMeasurementsBtn.addEventListener("click", () => { closeSideMenu(); openMeasurements(); });
 measurementsBackBtn.addEventListener("click", () => showView(home));
 measurementsAddBtn.addEventListener("click", () => openMeasurementEditor(null));
 
+measurementsTabExercisesBtn.addEventListener("click", () => setMeasurementsMode("exercises"));
+measurementsTabListBtn.addEventListener("click", () => setMeasurementsMode("measurements"));
+measurementsTabPhotosBtn.addEventListener("click", () => setMeasurementsMode("photos"));
+measurementsCompareBtn.addEventListener("click", () => {
+  setMeasurementsMode(measurementsMode === "compare" ? "photos" : "compare");
+});
+
+function setMeasurementsMode(mode) {
+  measurementsMode = mode;
+  if (mode !== "compare") {
+    try { localStorage.setItem("measurementsMode", mode); } catch (e) { /* private mode */ }
+  }
+  applyMeasurementsMode();
+  renderMeasurements();
+}
+
+// Show/hide the mode's containers and sync the tab / Compare button chrome.
+function applyMeasurementsMode() {
+  const isExercises = measurementsMode === "exercises";
+  const isList = measurementsMode === "measurements";
+  const isPhotos = measurementsMode === "photos";
+  const isCompare = measurementsMode === "compare";
+
+  progressExercisesEl.hidden = !isExercises;
+  for (const el of [measurementsChartEl, measurementsFilterEl, measurementsStatusEl, measurementsListEl]) {
+    el.hidden = !isList;
+  }
+  measurementsPhotosEl.hidden = !isPhotos;
+  measurementsCompareEl.hidden = !isCompare;
+  measurementsTabsEl.hidden = isCompare;
+
+  measurementsTabExercisesBtn.classList.toggle("is-active", isExercises);
+  measurementsTabListBtn.classList.toggle("is-active", isList);
+  measurementsTabPhotosBtn.classList.toggle("is-active", isPhotos);
+
+  measurementsCompareBtn.hidden = !(isPhotos || isCompare);
+  measurementsCompareBtn.textContent = isCompare ? "Done" : "Compare";
+  measurementsAddBtn.hidden = !isList;   // "Add" only logs measurement entries
+}
+
 async function openMeasurements() {
   showView(measurementsView);
+  applyMeasurementsMode();
   await loadMeasurements();
 }
 
@@ -3542,6 +3616,8 @@ async function loadMeasurements() {
   measurementsChartEl.replaceChildren();
   measurementsFilterEl.replaceChildren();
   measurementsListEl.replaceChildren();
+  photoFeedLoaded = false;         // a save/delete may have changed photos; refetch on demand
+  exerciseHistoryLoaded = false;   // pick up workouts finished since last visit
   try {
     const res = await authFetch(MEASUREMENTS_API);
     if (!res.ok) {
@@ -3578,6 +3654,13 @@ function measurementPlaceholder(text) {
 }
 
 function renderMeasurements() {
+  if (measurementsMode === "exercises") return renderExerciseProgress();
+  if (measurementsMode === "photos") return renderPhotoTimeline();
+  if (measurementsMode === "compare") return renderCompare();
+  renderMeasurementsList();
+}
+
+function renderMeasurementsList() {
   if (measurementEntries.length === 0) {
     measurementsStatusEl.textContent = "No measurements yet — tap Add to log your first.";
     return;
@@ -3617,6 +3700,331 @@ function renderMeasurements() {
   measurementsListEl.replaceChildren(
     ...measurementEntries.map(buildMeasurementRow),
   );
+}
+
+// --- Exercises tab: progress for a lift you've logged ----------------
+async function loadExerciseHistory() {
+  const res = await authFetch(EXERCISES_API + "/history");
+  if (!res.ok) throw new Error("Could not load your exercise history.");
+  exerciseHistory = await res.json();   // newest activity first
+  exerciseHistoryLoaded = true;
+}
+
+async function renderExerciseProgress() {
+  if (!exerciseHistoryLoaded) {
+    progressExerciseListEl.replaceChildren(measurementPlaceholder("Loading…"));
+    try {
+      await loadExerciseHistory();
+    } catch (err) {
+      progressExerciseListEl.replaceChildren(
+        measurementPlaceholder(err.message || "Could not reach the server."),
+      );
+      return;
+    }
+    if (measurementsMode !== "exercises") return;
+  }
+
+  progressExerciseSearchEl.hidden = exerciseHistory.length === 0;
+  const q = progressExerciseSearchEl.value.trim();
+  const items = q
+    ? exerciseHistory.filter((e) => nameMatchesQuery(e.name, q))
+    : exerciseHistory;
+
+  progressExerciseListEl.replaceChildren();
+  if (exerciseHistory.length === 0) {
+    progressExerciseListEl.append(
+      measurementPlaceholder("Finish a workout to see exercise progress here."),
+    );
+    return;
+  }
+  if (items.length === 0) {
+    progressExerciseListEl.append(measurementPlaceholder("No exercises match."));
+    return;
+  }
+  for (const it of items) progressExerciseListEl.append(buildProgressExerciseRow(it));
+}
+
+function buildProgressExerciseRow(it) {
+  const row = document.createElement("details");
+  row.className = "exercise";
+
+  const summary = document.createElement("summary");
+  summary.className = "exercise-name";
+  summary.textContent = it.name;
+  row.append(summary);
+
+  const meta = document.createElement("p");
+  meta.className = "exercise-meta";
+  meta.textContent =
+    `Last ${fmtDate(it.last_performed)}  ·  ${it.session_count} session${it.session_count === 1 ? "" : "s"}`;
+  row.append(meta);
+
+  const body = document.createElement("div");
+  body.className = "exercise-detail-body";
+  row.append(body);
+
+  let loaded = false;
+  row.addEventListener("toggle", () => {
+    if (row.open && !loaded) {
+      loaded = true;
+      // renderExerciseDetail only needs id / name / tracking_type / is_custom.
+      loadExerciseDetail(
+        { id: it.id, name: it.name, tracking_type: it.tracking_type, is_custom: false },
+        body,
+        { progressOnly: true },
+      );
+    }
+  });
+
+  return row;
+}
+
+let progressSearchDebounce = null;
+progressExerciseSearchEl.addEventListener("input", () => {
+  clearTimeout(progressSearchDebounce);
+  progressSearchDebounce = setTimeout(renderExerciseProgress, 120);
+});
+
+// --- Progress-photo timeline -----------------------------------------
+// photoFeed holds every dated entry that has photos (one fetch per Measurements
+// open). To keep memory bounded on long timelines, a thumbnail only carries an
+// <img src> while its card is near the viewport -- a shared IntersectionObserver
+// swaps it in and out; the data URL is parked on the element until then.
+const photoThumbSrc = new WeakMap();
+const photoThumbObserver =
+  "IntersectionObserver" in window
+    ? new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            const img = e.target;
+            if (e.isIntersecting) {
+              const src = photoThumbSrc.get(img);
+              if (src && img.getAttribute("src") !== src) {
+                img.src = src;
+                img.classList.remove("photo-timeline-thumb--loading");
+              }
+            } else if (img.getAttribute("src")) {
+              img.removeAttribute("src");
+              img.classList.add("photo-timeline-thumb--loading");
+            }
+          }
+        },
+        { rootMargin: "1000px 0px" },
+      )
+    : null;
+
+async function loadPhotoFeed() {
+  const res = await authFetch(MEASUREMENTS_API + "/photos");
+  if (!res.ok) throw new Error("Could not load your progress photos.");
+  photoFeed = await res.json();   // newest-first: [{id, measured_on, values, photos[]}]
+  photoFeedLoaded = true;
+}
+
+// [{label, text}] for every present measurement, in MEASUREMENT_TYPES order.
+function measurementValueRows(values) {
+  const rows = [];
+  for (const t of MEASUREMENT_TYPES) {
+    const v = values && values[t.key];
+    if (v == null) continue;
+    rows.push({ label: t.label, text: `${fmtMeasureNum(toDisplay(t.dim, v))} ${unitLabel(t.dim)}` });
+  }
+  return rows;
+}
+
+function fillMeta(el, values) {
+  const rows = measurementValueRows(values);
+  if (rows.length === 0) {
+    el.textContent = "No measurements logged";
+    el.classList.add("photo-timeline-meta--empty");
+    return;
+  }
+  for (const r of rows) {
+    const k = document.createElement("span");
+    k.className = "photo-timeline-meta-k";
+    k.textContent = r.label;
+    const v = document.createElement("span");
+    v.className = "photo-timeline-meta-v";
+    v.textContent = r.text;
+    el.append(k, v);
+  }
+}
+
+async function renderPhotoTimeline() {
+  if (photoThumbObserver) photoThumbObserver.disconnect();
+  measurementsPhotosEl.replaceChildren();
+
+  if (!photoFeedLoaded) {
+    measurementsPhotosEl.append(measurementPlaceholder("Loading…"));
+    try {
+      await loadPhotoFeed();
+    } catch (err) {
+      measurementsPhotosEl.replaceChildren(
+        measurementPlaceholder(err.message || "Could not reach the server."),
+      );
+      return;
+    }
+    if (measurementsMode !== "photos") return;   // switched away mid-load
+    measurementsPhotosEl.replaceChildren();
+  }
+
+  if (photoFeed.length === 0) {
+    measurementsPhotosEl.append(
+      measurementPlaceholder("No progress photos yet — add one when you log a measurement."),
+    );
+    return;
+  }
+  for (const item of photoFeed) measurementsPhotosEl.append(buildPhotoTimelineCard(item));
+}
+
+function buildPhotoTimelineCard(item) {
+  const card = document.createElement("div");
+  card.className = "photo-timeline-card";
+
+  const date = document.createElement("div");
+  date.className = "photo-timeline-date";
+  date.textContent = fmtYmd(item.measured_on);
+  card.append(date);
+
+  const bodyEl = document.createElement("div");
+  bodyEl.className = "photo-timeline-body";
+
+  const strip = document.createElement("div");
+  strip.className = "photo-timeline-strip";
+  item.photos.forEach((src, i) => {
+    const img = document.createElement("img");
+    img.className = "photo-timeline-thumb photo-timeline-thumb--loading";
+    img.alt = `Progress photo ${i + 1} from ${fmtYmd(item.measured_on)}`;
+    img.addEventListener("click", () => openPhotoViewer(item.photos, i));
+    photoThumbSrc.set(img, src);
+    if (photoThumbObserver) photoThumbObserver.observe(img);
+    else { img.src = src; img.classList.remove("photo-timeline-thumb--loading"); }
+    strip.append(img);
+  });
+  bodyEl.append(strip);
+
+  const meta = document.createElement("div");
+  meta.className = "photo-timeline-meta";
+  fillMeta(meta, item.values);
+  bodyEl.append(meta);
+
+  card.append(bodyEl);
+  return card;
+}
+
+// --- Compare two dates ---------------------------------------------
+async function renderCompare() {
+  measurementsCompareEl.replaceChildren();
+
+  if (!photoFeedLoaded) {
+    measurementsCompareEl.append(measurementPlaceholder("Loading…"));
+    try {
+      await loadPhotoFeed();
+    } catch (err) {
+      measurementsCompareEl.replaceChildren(measurementPlaceholder(err.message || "Could not reach the server."));
+      return;
+    }
+    if (measurementsMode !== "compare") return;
+    measurementsCompareEl.replaceChildren();
+  }
+
+  if (photoFeed.length < 2) {
+    measurementsCompareEl.append(
+      measurementPlaceholder("Log progress photos on at least two dates to compare."),
+    );
+    return;
+  }
+
+  const ids = photoFeed.map((e) => e.id);
+  if (!ids.includes(comparePick.a)) comparePick.a = photoFeed[photoFeed.length - 1].id;  // oldest
+  if (!ids.includes(comparePick.b)) comparePick.b = photoFeed[0].id;                     // newest
+
+  const picks = document.createElement("div");
+  picks.className = "photo-compare-picks";
+  picks.append(buildCompareSelect("a"), buildCompareSelect("b"));
+  measurementsCompareEl.append(picks);
+
+  const a = photoFeed.find((e) => e.id === comparePick.a);
+  const b = photoFeed.find((e) => e.id === comparePick.b);
+
+  const cols = document.createElement("div");
+  cols.className = "photo-compare-cols";
+  cols.append(buildCompareColumn(a), buildCompareColumn(b));
+  measurementsCompareEl.append(cols);
+
+  measurementsCompareEl.append(buildCompareDeltas(a, b));
+}
+
+function buildCompareSelect(slot) {
+  const sel = document.createElement("select");
+  sel.className = "photo-compare-select";
+  for (const e of photoFeed) {
+    const opt = document.createElement("option");
+    opt.value = e.id;
+    opt.textContent = fmtYmd(e.measured_on);
+    if (e.id === comparePick[slot]) opt.selected = true;
+    sel.append(opt);
+  }
+  sel.addEventListener("change", () => { comparePick[slot] = sel.value; renderCompare(); });
+  return sel;
+}
+
+function buildCompareColumn(entry) {
+  const col = document.createElement("div");
+  col.className = "photo-compare-col";
+
+  const d = document.createElement("div");
+  d.className = "photo-compare-col-date";
+  d.textContent = fmtYmd(entry.measured_on);
+  col.append(d);
+
+  const img = document.createElement("img");
+  img.className = "photo-compare-photo";
+  img.alt = `Progress photo from ${fmtYmd(entry.measured_on)}`;
+  img.src = entry.photos[0];
+  img.addEventListener("click", () => openPhotoViewer(entry.photos, 0));
+  col.append(img);
+
+  const meta = document.createElement("div");
+  meta.className = "photo-timeline-meta";
+  fillMeta(meta, entry.values);
+  col.append(meta);
+  return col;
+}
+
+function buildCompareDeltas(a, b) {
+  const wrap = document.createElement("div");
+  wrap.className = "photo-compare-deltas";
+
+  const head = document.createElement("div");
+  head.className = "photo-compare-deltas-head";
+  head.textContent = `Change · ${fmtYmd(a.measured_on)} → ${fmtYmd(b.measured_on)}`;
+  wrap.append(head);
+
+  let any = false;
+  for (const t of MEASUREMENT_TYPES) {
+    const va = a.values && a.values[t.key];
+    const vb = b.values && b.values[t.key];
+    if (va == null || vb == null) continue;
+    any = true;
+    const diff = Math.round((toDisplay(t.dim, vb) - toDisplay(t.dim, va)) * 10) / 10;
+    const k = document.createElement("span");
+    k.className = "photo-timeline-meta-k";
+    k.textContent = t.label;
+    const v = document.createElement("span");
+    v.className = "photo-compare-delta";
+    if (diff > 0) v.classList.add("photo-compare-delta--up");
+    else if (diff < 0) v.classList.add("photo-compare-delta--down");
+    const sign = diff > 0 ? "+" : diff < 0 ? "−" : "±";
+    v.textContent = `${sign}${fmtMeasureNum(Math.abs(diff))} ${unitLabel(t.dim)}`;
+    wrap.append(k, v);
+  }
+  if (!any) {
+    const p = document.createElement("div");
+    p.className = "photo-timeline-meta--empty";
+    p.textContent = "No measurement logged on both dates.";
+    wrap.append(p);
+  }
+  return wrap;
 }
 
 function buildMeasurementRow(entry) {
@@ -3696,7 +4104,7 @@ function renderMeasurementPhotos() {
     img.src = src;
     img.alt = `Progress photo ${i + 1}`;
     thumb.append(img);
-    thumb.addEventListener("click", () => openPhotoViewer(src));
+    thumb.addEventListener("click", () => openPhotoViewer(measurementPhotos, i));
 
     if (measurementEditMode) {
       const rm = document.createElement("button");
@@ -3775,16 +4183,54 @@ function closeMeasurementEditor() {
 }
 
 // --- Full-size photo viewer ---
-function openPhotoViewer(src) {
-  measurementPhotoViewerImg.src = src;
+// Pages through a set of photos: edge tap-zones / arrow keys / swipe move;
+// centre tap, backdrop, or Esc close.
+let viewerPhotos = [];
+let viewerIndex = 0;
+
+function openPhotoViewer(photos, startIndex = 0) {
+  viewerPhotos = Array.isArray(photos) ? photos.slice() : [photos];
+  viewerIndex = Math.max(0, Math.min(viewerPhotos.length - 1, startIndex | 0));
+  showViewerPhoto();
   openOverlay(measurementPhotoViewerEl);
+}
+function showViewerPhoto() {
+  measurementPhotoViewerImg.src = viewerPhotos[viewerIndex] || "";
+  const many = viewerPhotos.length > 1;
+  measurementPhotoViewerPrev.hidden = !many;
+  measurementPhotoViewerNext.hidden = !many;
+  measurementPhotoViewerCount.hidden = !many;
+  if (many) {
+    measurementPhotoViewerCount.textContent = `${viewerIndex + 1} / ${viewerPhotos.length}`;
+  }
+}
+function stepViewer(delta) {
+  if (viewerPhotos.length < 2) return;
+  viewerIndex = (viewerIndex + delta + viewerPhotos.length) % viewerPhotos.length;
+  showViewerPhoto();
 }
 function closePhotoViewer() {
   closeOverlay(measurementPhotoViewerEl);   // src is replaced on the next open
 }
-measurementPhotoViewerEl.addEventListener("click", closePhotoViewer);
+measurementPhotoViewerPrev.addEventListener("click", (e) => { e.stopPropagation(); stepViewer(-1); });
+measurementPhotoViewerNext.addEventListener("click", (e) => { e.stopPropagation(); stepViewer(1); });
+measurementPhotoViewerImg.addEventListener("click", (e) => { e.stopPropagation(); closePhotoViewer(); });
+measurementPhotoViewerEl.addEventListener("click", closePhotoViewer);   // backdrop
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !measurementPhotoViewerEl.hidden) closePhotoViewer();
+  if (measurementPhotoViewerEl.hidden) return;
+  if (e.key === "Escape") closePhotoViewer();
+  else if (e.key === "ArrowLeft") stepViewer(-1);
+  else if (e.key === "ArrowRight") stepViewer(1);
+});
+let viewerTouchX = null;
+measurementPhotoViewerEl.addEventListener("touchstart", (e) => {
+  viewerTouchX = e.changedTouches[0].clientX;
+}, { passive: true });
+measurementPhotoViewerEl.addEventListener("touchend", (e) => {
+  if (viewerTouchX == null) return;
+  const dx = e.changedTouches[0].clientX - viewerTouchX;
+  viewerTouchX = null;
+  if (Math.abs(dx) > 40) stepViewer(dx < 0 ? 1 : -1);
 });
 
 // Shrink an image to fit within maxDim and re-encode as JPEG, returning a data URL.

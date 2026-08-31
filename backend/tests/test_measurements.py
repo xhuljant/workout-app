@@ -38,3 +38,27 @@ def test_measurement_crud_and_trash(client, headers):
 
     assert client.post(f"/api/measurements/{entry['id']}/restore", headers=headers).status_code == 200
     assert len(client.get("/api/measurements", headers=headers).json()) == 1
+
+
+def test_photos_feed_returns_only_photo_entries_newest_first(client, headers):
+    # Oldest: has a photo.  Middle: no photo.  Newest: has a photo.
+    client.post("/api/measurements", headers=headers, json={
+        "measured_on": "2026-01-01", "values": {"bodyweight": 82.0}, "photos": [PNG],
+    })
+    client.post("/api/measurements", headers=headers, json={
+        "measured_on": "2026-02-01", "values": {"bodyweight": 81.0}, "photos": [],
+    })
+    client.post("/api/measurements", headers=headers, json={
+        "measured_on": "2026-03-01", "values": {"waist": 83.0}, "photos": [PNG, PNG],
+    })
+
+    feed = client.get("/api/measurements/photos", headers=headers).json()
+    assert [f["measured_on"] for f in feed] == ["2026-03-01", "2026-01-01"]
+    assert feed[0]["photos"] == [PNG, PNG]
+    assert feed[0]["values"] == {"waist": 83.0}
+    assert feed[1]["photos"] == [PNG]
+
+    # Soft-deleted entries drop out of the feed.
+    client.delete(f"/api/measurements/{feed[0]['id']}", headers=headers)
+    feed = client.get("/api/measurements/photos", headers=headers).json()
+    assert [f["measured_on"] for f in feed] == ["2026-01-01"]

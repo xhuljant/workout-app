@@ -49,6 +49,43 @@ def test_edit_custom_exercise(client, headers):
     assert got["instructions"] == ["step one", "step two"]
 
 
+def _finish_workout(client, headers, exercise_id, name, sets):
+    client.post("/api/workouts", headers=headers)
+    content = {"exercises": [{
+        "exercise_id": exercise_id, "name": name, "tracking_type": "weight_reps",
+        "notes": "", "sets": [{"weight": w, "reps": r, "done": True} for (w, r) in sets],
+    }]}
+    assert client.put("/api/workouts/active", headers=headers,
+                      json={"content": content}).status_code == 200
+    assert client.post("/api/workouts/active/finish", headers=headers).status_code == 200
+
+
+def test_exercise_history_lists_only_performed_newest_first(client, headers, a_weight_exercise):
+    done = a_weight_exercise
+    never = client.post("/api/exercises", headers=headers, json={
+        "name": "Never done", "tracking_type": "weight_reps",
+    }).json()["id"]
+
+    # Two finished sessions of the seeded lift.
+    _finish_workout(client, headers, done, "Seeded lift", [(100, 5)])
+    _finish_workout(client, headers, done, "Seeded lift", [(105, 5)])
+
+    hist = client.get("/api/exercises/history", headers=headers).json()
+    assert [h["id"] for h in hist] == [done]          # the never-done one is absent
+    assert hist[0]["session_count"] == 2
+    assert hist[0]["tracking_type"] == "weight_reps"
+    assert never not in [h["id"] for h in hist]
+
+    # A started-but-not-finished workout doesn't count.
+    client.post("/api/workouts", headers=headers)
+    still = client.get("/api/exercises/history", headers=headers).json()
+    assert still[0]["session_count"] == 2
+
+
+def test_exercise_history_empty_without_workouts(client, headers):
+    assert client.get("/api/exercises/history", headers=headers).json() == []
+
+
 def test_cannot_edit_or_delete_seeded_exercise(client, headers, a_weight_exercise):
     edit = client.put(f"/api/exercises/{a_weight_exercise}", headers=headers, json={
         "name": "hijacked", "tracking_type": "weight_reps",
