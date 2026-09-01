@@ -24,7 +24,10 @@ exercise has a tracking mode — *weight × reps*, *reps only*, *time*, or
 *distance + time* — that determines how its sets are logged and scored. Editing a
 custom exercise's name rewrites it in every past workout and current routine that
 used it; category / equipment / muscles aren't denormalized, so they update
-everywhere on their own.
+everywhere on their own. Exercise detail views can show example media — two
+start/end-position stills alternated for a GIF-like demo (see
+[Exercise example media](#exercise-example-media)); custom exercises can carry
+two uploaded photos of their own.
 
 **Live workouts**
 Start an empty session or one pre-filled from a routine. The in-progress workout
@@ -56,7 +59,8 @@ Three tabs:
   progress photos each; a chosen metric is charted over time.
 - **Photos** — a date-ordered progress-photo timeline with each day's numbers
   beside it, a swipeable full-screen viewer, and a two-date **Compare** view
-  with per-measurement deltas.
+  with per-measurement deltas. Can be gated behind a PIN (see
+  [Progress-photo lock](#progress-photo-lock)).
 
 **Appearance**
 Light / dark theme, set in Settings to **Match device**, **Light**, or **Dark**.
@@ -340,13 +344,25 @@ run inside the containers.
    # paste it as JWT_SECRET in .env, and set a real POSTGRES_PASSWORD
    ```
 
-2. Build and start:
+2. *(Optional, one-time)* Vendor the exercise demo images — they're gitignored,
+   so a fresh checkout has none until you run this. Skipping it just means
+   exercises show no example photos:
+
+   ```bash
+   git clone https://github.com/yuhonas/free-exercise-db /tmp/fedb
+   python backend/scripts/vendor_exercise_images.py /tmp/fedb
+   ```
+
+   The ~99 MB of JPEGs land in `backend/static/exercises/` and get baked into
+   the `api` image by the next build. See [Exercise example media](#exercise-example-media).
+
+3. Build and start:
 
    ```bash
    docker compose up --build
    ```
 
-3. Open **http://localhost:8000**. Interactive API docs are at **/docs**.
+4. Open **http://localhost:8000**. Interactive API docs are at **/docs**.
 
 Stop with `Ctrl-C`, then `docker compose down`.
 
@@ -436,7 +452,9 @@ JWT_SECRET=test \
 Coverage: auth round-trip and email normalisation, the workout lifecycle plus the
 `409` optimistic-concurrency path, `previous` / `stats` math (Epley 1RM, session
 volume, per-mode aggregates), the one-default-folder invariant, measurement CRUD
-with photos, and JSON export → import into a fresh account.
+with photos, the progress-photo PIN (set / change / verify / remove + admin CLI),
+exercise example media (seed back-fill, custom-upload validation), and JSON
+export → import into a fresh account.
 
 ---
 
@@ -454,6 +472,8 @@ looks a user up by email and only touches non-deleted accounts.
 | `rename-user <email> "New Name"` | Change an account's display name. |
 | `clear-history <email> [--yes]` | Soft-delete all of that account's logged workouts (recoverable from Trash for 30 days, same as deleting them one by one). Asks for confirmation unless `--yes` is passed. |
 | `delete-account <email> [--yes]` | Soft-delete the account — same effect as the in-app "Delete account" (routines and any active workout are soft-deleted, the email is tombstoned, finished history is left in place). Asks for confirmation unless `--yes` is passed. |
+| `set-photo-pin <email> <pin>` | Set the account's progress-photo PIN (4–8 digits). Recovery path when someone is locked out and has also forgotten the account password. |
+| `clear-photo-pin <email>` | Remove the account's progress-photo PIN. |
 
 Examples:
 
@@ -463,7 +483,46 @@ docker compose exec api python -m app.admin_cli reset-password alice@example.com
 docker compose exec api python -m app.admin_cli rename-user alice@example.com "Alice K"
 docker compose exec api python -m app.admin_cli clear-history alice@example.com
 docker compose exec api python -m app.admin_cli delete-account alice@example.com
+docker compose exec api python -m app.admin_cli clear-photo-pin alice@example.com
 ```
+
+### Progress-photo lock
+
+Settings → **Progress photo lock** sets a 4–8 digit PIN that's asked for before
+the Progress tab's photo timeline (and any single entry that has photos) will
+show. It re-locks when the app is backgrounded, on logout, after 5 minutes, and
+on every reload. "Forgot PIN?" clears it with the account password.
+
+This is a **UI deterrent**, not encryption: the photo blobs are still returned
+by `GET /api/measurements/photos` and included in the JSON data export for any
+logged-in session. It's meant for "someone picks up my unlocked phone", not a
+determined attacker with the account credentials.
+
+### Exercise example media
+
+Each library exercise can show the two start/end-position stills from
+[free-exercise-db](https://github.com/yuhonas/free-exercise-db) (alternated for a
+GIF-like demo, tap to enlarge).
+
+The image files are **gitignored, not committed** (`backend/static/exercises/`),
+so a 99 MB blob stays out of the repo and its history. Run the one-off vendoring
+step once per fresh checkout, pointing at a local checkout of that repo:
+
+```bash
+git clone https://github.com/yuhonas/free-exercise-db /tmp/fedb
+python backend/scripts/vendor_exercise_images.py /tmp/fedb
+```
+
+That copies ~1.7k JPEGs (~99 MB) into `backend/static/exercises/`; `docker compose
+build` bakes them into the `api` image (via `COPY . .`), and they're served
+locally at `/exercises/<slug>/N.jpg` — no runtime network dependency. The script
+is idempotent, so re-running it only copies what's missing. Until you run it the
+app just shows no media.
+
+To serve the images from a CDN instead of hosting them, set `EXERCISE_IMG_BASE`
+at the top of `backend/static/app.js` (trades the disk cost for a third-party
+runtime dependency and no offline support). Custom exercises can carry up to two
+uploaded photos of their own, added in the exercise editor.
 
 ---
 

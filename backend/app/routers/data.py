@@ -105,6 +105,7 @@ def _exercise_dict(e: Exercise) -> dict:
         "primary_muscles": e.primary_muscles or [],
         "secondary_muscles": e.secondary_muscles or [],
         "instructions": e.instructions or [],
+        "images": e.images or [],
         "deleted_at": e.deleted_at.isoformat() if e.deleted_at else None,
     }
 
@@ -244,6 +245,10 @@ def import_data(
             primary_muscles=e.get("primary_muscles") or [],
             secondary_muscles=e.get("secondary_muscles") or [],
             instructions=e.get("instructions") or [],
+            images=[
+                s for s in (e.get("images") or [])
+                if isinstance(s, str) and s.startswith("data:image/")
+            ][:2],
             is_custom=True,
             created_by=uid,
             deleted_at=_dt(e.get("deleted_at")),

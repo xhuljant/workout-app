@@ -53,9 +53,19 @@ class User(Base):
     # The argon2 hash of the password. We NEVER store the raw password.
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
 
+    # The argon2 hash of the optional progress-photo PIN. NULL = no photo lock.
+    # Kept in its own column, not `preferences`, so it never rides along in
+    # GET /api/auth/me or a data export.
+    photo_pin_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+
     # Free-form settings (units, default rest timer, ...). JSONB lets us add new
     # preferences later without a database migration.
     preferences: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+    @property
+    def photo_pin_set(self) -> bool:
+        """True when a progress-photo PIN is configured. Safe to expose."""
+        return self.photo_pin_hash is not None
 
     # Timestamps. server_default/onupdate let Postgres fill these in for us.
     created_at: Mapped[datetime] = mapped_column(
@@ -117,6 +127,12 @@ class Exercise(Base):
     primary_muscles: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     secondary_muscles: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     instructions: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+    # Example media showing how the exercise is performed. Seeded rows hold
+    # relative paths served from /exercises/<slug>/N.jpg (from free-exercise-db);
+    # custom rows hold `data:image/...` URLs the user uploaded. Usually 2 frames
+    # (start + end position) which the client alternates for a GIF-like demo.
+    images: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
 
     # True = added by a user through the app; False = came from the seeded library.
     is_custom: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

@@ -7,6 +7,7 @@ FastAPI uses these to:
 Keeping schemas separate from the database models is a deliberate safety habit:
 the API physically cannot return a field (like password_hash) unless we list it here.
 """
+import re
 import uuid
 from datetime import date, datetime
 from typing import Literal
@@ -33,6 +34,8 @@ class UserPublic(BaseModel):
     email: EmailStr
     display_name: str
     preferences: dict = Field(default_factory=dict)
+    # Whether a progress-photo PIN is configured. The hash itself is never exposed.
+    photo_pin_set: bool = False
     created_at: datetime
 
     # from_attributes=True lets Pydantic build this straight from a SQLAlchemy
@@ -51,6 +54,39 @@ class PasswordChange(BaseModel):
     """Body for POST /api/auth/change-password."""
     current_password: str
     new_password: str = Field(min_length=8, max_length=128)
+
+
+_PIN_RE = r"^\d{4,8}$"
+
+
+class PhotoPinSet(BaseModel):
+    """Body for POST /api/auth/photo-pin (set or change the progress-photo PIN).
+
+    When a PIN is already set, either the current PIN or the account password is
+    required to change it.
+    """
+    new_pin: str
+    current_pin: str | None = None
+    password: str | None = None
+
+    @field_validator("new_pin")
+    @classmethod
+    def _digits_only(cls, v: str) -> str:
+        if not re.match(_PIN_RE, v):
+            raise ValueError("PIN must be 4-8 digits.")
+        return v
+
+
+class PhotoPinVerify(BaseModel):
+    """Body for POST /api/auth/photo-pin/verify."""
+    pin: str
+
+
+class PhotoPinRemove(BaseModel):
+    """Body for DELETE /api/auth/photo-pin. Either the PIN or the account
+    password clears the lock."""
+    pin: str | None = None
+    password: str | None = None
 
 
 class Token(BaseModel):
@@ -80,11 +116,32 @@ class ExerciseCreate(BaseModel):
     primary_muscles: list[str] = Field(default_factory=list)
     secondary_muscles: list[str] = Field(default_factory=list)
     instructions: list[str] = Field(default_factory=list)
+    # Up to 2 example photos, each an uploaded `data:image/...` URL (the client
+    # downscales before sending). External URLs and file paths are rejected so a
+    # custom exercise can't point at another host or escape the media directory.
+    images: list[str] = Field(default_factory=list)
 
     @field_validator("tracking_type")
     @classmethod
     def _known_tracking(cls, v: str) -> str:
         return v if v in _TRACKING_TYPES else "weight_reps"
+
+    @field_validator("images")
+    @classmethod
+    def _clean_images(cls, v: list[str]) -> list[str]:
+        cleaned = []
+        for item in v:
+            item = (item or "").strip()
+            if not item:
+                continue
+            if not item.startswith("data:image/"):
+                raise ValueError("Each image must be an uploaded data:image/ URL.")
+            if len(item) > 3_000_000:  # ~2 MB of base64
+                raise ValueError("Image is too large.")
+            cleaned.append(item)
+        if len(cleaned) > 2:
+            raise ValueError("At most 2 images.")
+        return cleaned
 
 
 class ExerciseUpdate(ExerciseCreate):
@@ -105,6 +162,9 @@ class ExercisePublic(BaseModel):
     primary_muscles: list[str]
     secondary_muscles: list[str]
     instructions: list[str]
+    # Relative paths ("<slug>/0.jpg", served from /exercises/) for seeded rows,
+    # or `data:image/...` URLs for custom rows.
+    images: list[str] = Field(default_factory=list)
     is_custom: bool
     created_at: datetime
 
@@ -276,6 +336,7 @@ class ExerciseHistoryItem(BaseModel):
     id: uuid.UUID
     name: str
     tracking_type: str
+    images: list[str] = Field(default_factory=list)
     last_performed: datetime
     session_count: int
 

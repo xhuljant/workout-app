@@ -44,3 +44,23 @@ def test_export_then_import_into_fresh_account(client, make_user, a_weight_exerc
     assert sum(ins2.values()) == 0
     skipped = r.json()["skipped"]
     assert skipped["workouts"] == 1 and skipped["routines"] == 1
+
+
+_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+
+def test_custom_exercise_images_round_trip_through_export_import(client, make_user):
+    alice = make_user(email="alice2@example.com")
+    ex = client.post("/api/exercises", headers=alice, json={
+        "name": "Alice's move", "images": [_PNG, _PNG],
+    }).json()
+
+    doc = client.get("/api/data/export", headers=alice).json()
+    exported = next(e for e in doc["exercises"] if e["id"] == ex["id"])
+    assert exported["images"] == [_PNG, _PNG]
+
+    bob = make_user(email="bob2@example.com")
+    assert client.post("/api/data/import", headers=bob, json=doc).status_code == 200
+    got = next(e for e in client.get("/api/exercises", headers=bob).json()
+               if e["id"] == ex["id"])
+    assert got["images"] == [_PNG, _PNG]

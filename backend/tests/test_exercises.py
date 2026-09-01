@@ -24,6 +24,87 @@ def test_bogus_tracking_type_is_coerced(client, headers):
     assert r.json()["tracking_type"] == "weight_reps"
 
 
+_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+
+def test_seeded_exercise_exposes_image_paths(client, headers):
+    lst = client.get("/api/exercises", headers=headers).json()
+    sit_up = next(e for e in lst if e["name"] == "3/4 Sit-Up")
+    assert sit_up["images"] == ["3_4_Sit-Up/0.jpg", "3_4_Sit-Up/1.jpg"]
+
+
+def test_seed_backfills_images_and_is_idempotent(client, headers):
+    from sqlalchemy import func
+    from app.database import SessionLocal
+    from app.models import Exercise
+    from app.seed import backfill_images
+
+    db = SessionLocal()
+    try:
+        row = db.query(Exercise).filter(Exercise.source_id == "3_4_Sit-Up").first()
+        row.images = []
+        db.commit()
+
+        assert backfill_images(db) >= 1          # refilled at least our row
+        db.refresh(row)
+        assert row.images == ["3_4_Sit-Up/0.jpg", "3_4_Sit-Up/1.jpg"]
+
+        # Second run finds nothing empty.
+        assert backfill_images(db) == 0
+        empty = (
+            db.query(Exercise)
+            .filter(Exercise.is_custom.is_(False),
+                    func.jsonb_array_length(Exercise.images) == 0)
+            .count()
+        )
+        assert empty == 0
+    finally:
+        db.close()
+
+
+def test_custom_exercise_round_trips_uploaded_images(client, headers):
+    r = client.post("/api/exercises", headers=headers, json={
+        "name": "Custom with pics", "images": [_PNG, _PNG],
+    })
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["is_custom"] is True
+    assert body["images"] == [_PNG, _PNG]
+
+
+def test_custom_exercise_rejects_external_or_path_images(client, headers):
+    for bad in (["http://evil/x.jpg"], ["../secret/0.jpg"], ["3_4_Sit-Up/0.jpg"]):
+        r = client.post("/api/exercises", headers=headers, json={
+            "name": "nope", "images": bad,
+        })
+        assert r.status_code == 422, bad
+
+
+def test_custom_exercise_rejects_more_than_two_images(client, headers):
+    r = client.post("/api/exercises", headers=headers, json={
+        "name": "too many", "images": [_PNG, _PNG, _PNG],
+    })
+    assert r.status_code == 422
+
+
+def test_edit_updates_images_but_seeded_stay_readonly(client, headers):
+    ex = client.post("/api/exercises", headers=headers, json={
+        "name": "Editable pics", "images": [_PNG],
+    }).json()
+    r = client.put(f"/api/exercises/{ex['id']}", headers=headers, json={
+        "name": "Editable pics", "tracking_type": "weight_reps", "images": [_PNG, _PNG],
+    })
+    assert r.status_code == 200
+    assert len(r.json()["images"]) == 2
+
+    seeded = next(e for e in client.get("/api/exercises", headers=headers).json()
+                  if not e["is_custom"])
+    r = client.put(f"/api/exercises/{seeded['id']}", headers=headers, json={
+        "name": "hijack", "tracking_type": "weight_reps", "images": [_PNG],
+    })
+    assert r.status_code == 403
+
+
 def test_edit_custom_exercise(client, headers):
     ex = client.post("/api/exercises", headers=headers, json={
         "name": "My Curl", "tracking_type": "weight_reps",

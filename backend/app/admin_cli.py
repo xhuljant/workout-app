@@ -10,6 +10,8 @@ dependencies installed and can reach the database):
     docker compose exec api python -m app.admin_cli rename-user a@b.com "New Name"
     docker compose exec api python -m app.admin_cli clear-history a@b.com
     docker compose exec api python -m app.admin_cli delete-account a@b.com
+    docker compose exec api python -m app.admin_cli set-photo-pin a@b.com 1234
+    docker compose exec api python -m app.admin_cli clear-photo-pin a@b.com
 
 See README.md ("Admin CLI") for the full command reference.
 
@@ -85,6 +87,35 @@ def cmd_reset_password(args):
         print(f"Password reset for {user.email}.")
         if not args.password:
             print(f"Temporary password: {new_password}")
+    finally:
+        db.close()
+
+
+def cmd_set_photo_pin(args):
+    db = SessionLocal()
+    try:
+        user = _find_user(db, args.email)
+        pin = args.pin
+        if not (pin.isdigit() and 4 <= len(pin) <= 8):
+            print("PIN must be 4-8 digits.", file=sys.stderr)
+            sys.exit(1)
+        user.photo_pin_hash = hash_password(pin)
+        db.commit()
+        print(f"Progress-photo PIN set for {user.email}.")
+    finally:
+        db.close()
+
+
+def cmd_clear_photo_pin(args):
+    db = SessionLocal()
+    try:
+        user = _find_user(db, args.email)
+        if user.photo_pin_hash is None:
+            print(f"{user.email} has no progress-photo PIN set.")
+            return
+        user.photo_pin_hash = None
+        db.commit()
+        print(f"Progress-photo PIN cleared for {user.email}.")
     finally:
         db.close()
 
@@ -187,6 +218,15 @@ def main():
     p.add_argument("email")
     p.add_argument("new_name")
     p.set_defaults(func=cmd_rename_user)
+
+    p = sub.add_parser("set-photo-pin", help="Set an account's progress-photo PIN (4-8 digits).")
+    p.add_argument("email")
+    p.add_argument("pin")
+    p.set_defaults(func=cmd_set_photo_pin)
+
+    p = sub.add_parser("clear-photo-pin", help="Remove an account's progress-photo PIN.")
+    p.add_argument("email")
+    p.set_defaults(func=cmd_clear_photo_pin)
 
     p = sub.add_parser("clear-history", help="Soft-delete all of an account's logged workouts.")
     p.add_argument("email")

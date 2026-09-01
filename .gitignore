@@ -10,6 +10,11 @@ venv/
 backups/
 .pytest_cache/
 
+# Vendored exercise demo images (~99 MB). Not committed -- run
+# `python backend/scripts/vendor_exercise_images.py <free-exercise-db checkout>`
+# once per fresh checkout, before `docker compose build`.
+backend/static/exercises/
+
 # macOS
 .DS_Store
 .AppleDouble

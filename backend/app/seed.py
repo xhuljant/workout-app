@@ -6,12 +6,14 @@ builds are reproducible.
 
 seed_exercises() runs on every startup. It only inserts rows whose source_id
 isn't in the table yet, so running it repeatedly is harmless and it back-fills
-anything new if the snapshot file is later refreshed. Custom exercises added
-through the app have source_id = NULL and are never touched here.
+anything new if the snapshot file is later refreshed. It also back-fills the
+`images` list onto rows that predate that column. Custom exercises added through
+the app have source_id = NULL and are never touched here.
 """
 import json
 from pathlib import Path
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .models import Exercise
@@ -58,6 +60,7 @@ def seed_exercises(db: Session) -> int:
                 primary_muscles=item.get("primaryMuscles") or [],
                 secondary_muscles=item.get("secondaryMuscles") or [],
                 instructions=item.get("instructions") or [],
+                images=item.get("images") or [],
                 is_custom=False,
             )
         )
@@ -66,4 +69,36 @@ def seed_exercises(db: Session) -> int:
         db.add_all(new_rows)
         db.commit()
 
+    backfill_images(db, records)
     return len(new_rows)
+
+
+def backfill_images(db: Session, records: list[dict] | None = None) -> int:
+    """Fill `images` on seeded rows that predate the column (still []). Keyed by
+    source_id, only touches rows that are still empty, so it's a no-op once every
+    row has its media. Returns the number of rows updated."""
+    if records is None:
+        records = json.loads(_DATA_FILE.read_text(encoding="utf-8"))
+    by_slug = {r["id"]: (r.get("images") or []) for r in records if r.get("id")}
+    if not by_slug:
+        return 0
+
+    stale = (
+        db.query(Exercise)
+        .filter(
+            Exercise.is_custom.is_(False),
+            Exercise.source_id.isnot(None),
+            func.jsonb_array_length(Exercise.images) == 0,
+        )
+        .all()
+    )
+    updated = 0
+    for row in stale:
+        imgs = by_slug.get(row.source_id)
+        if imgs:
+            row.images = list(imgs)
+            updated += 1
+    if updated:
+        db.commit()
+        print(f"Back-filled example media on {updated} exercises.")
+    return updated

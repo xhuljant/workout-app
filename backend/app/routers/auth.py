@@ -15,6 +15,9 @@ from ..deps import get_current_user
 from ..models import Routine, User, Workout
 from ..schemas import (
     PasswordChange,
+    PhotoPinRemove,
+    PhotoPinSet,
+    PhotoPinVerify,
     RefreshRequest,
     Token,
     UserCreate,
@@ -191,6 +194,81 @@ def change_password(
             detail="Current password is incorrect.",
         )
     current_user.password_hash = hash_password(body.new_password)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- Progress-photo PIN -----------------------------------------------------
+#
+# A low-friction privacy gate for the Progress tab's photo timeline. The hash
+# lives in its own column (never echoed by /me or an export). This only gates
+# the UI -- the photo blobs are still reachable through the measurements API and
+# the data export by any valid token. That trade-off is deliberate; see the
+# "progress photo lock" note in the README.
+
+def _photo_pin_unlocked_by(current_user: User, pin: str | None, password: str | None) -> bool:
+    """True when the caller proved they may change/clear the photo PIN: either
+    the current PIN or the account password. Used only when a PIN is already set."""
+    if pin and verify_password(pin, current_user.photo_pin_hash or ""):
+        return True
+    if password and verify_password(password, current_user.password_hash):
+        return True
+    return False
+
+
+@router.post("/photo-pin", response_model=UserPublic)
+def set_photo_pin(
+    body: PhotoPinSet,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Set or change the progress-photo PIN. Changing an existing PIN needs the
+    current PIN or the account password."""
+    if current_user.photo_pin_hash is not None and not _photo_pin_unlocked_by(
+        current_user, body.current_pin, body.password
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Enter your current PIN or account password to change it.",
+        )
+    current_user.photo_pin_hash = hash_password(body.new_pin)
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.post("/photo-pin/verify", status_code=status.HTTP_204_NO_CONTENT)
+def verify_photo_pin(
+    body: PhotoPinVerify,
+    current_user: User = Depends(get_current_user),
+):
+    """Check a PIN. 204 when it matches, 400 otherwise. No-op-ish when no PIN is
+    set (treated as incorrect) so the client never gets a false unlock."""
+    if current_user.photo_pin_hash is None or not verify_password(
+        body.pin, current_user.photo_pin_hash
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect PIN."
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/photo-pin", status_code=status.HTTP_204_NO_CONTENT)
+def remove_photo_pin(
+    body: PhotoPinRemove,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Clear the photo lock. Needs the current PIN or the account password --
+    whoever has the password already has full access, so this grants nothing new."""
+    if current_user.photo_pin_hash is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    if not _photo_pin_unlocked_by(current_user, body.pin, body.password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Enter your PIN or account password.",
+        )
+    current_user.photo_pin_hash = None
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

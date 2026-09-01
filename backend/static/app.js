@@ -219,20 +219,37 @@ const measurementPhotoViewerPrev = document.getElementById("measurement-photo-vi
 const measurementPhotoViewerNext = document.getElementById("measurement-photo-viewer-next");
 const measurementPhotoViewerCount = document.getElementById("measurement-photo-viewer-count");
 
-// Settings sub-view (+ its Change password / Delete account pages)
+// Settings: a navigation list whose rows each open their own page.
 const settingsView = document.getElementById("settings-view");
 const settingsBackBtn = document.getElementById("settings-back");
+const settingsNavRows = document.querySelectorAll("#settings-view .settings-nav-row[data-settings-nav]");
+const settingsSubBackBtns = document.querySelectorAll(".settings-sub-back");
+
+const settingsProfileView = document.getElementById("settings-profile-view");
 const settingsProfileForm = document.getElementById("settings-profile-form");
 const settingsProfileMsg = document.getElementById("settings-profile-msg");
 const setNameInput = document.getElementById("set-name");
 const setEmailInput = document.getElementById("set-email");
-const setRestInput = document.getElementById("set-rest");
-const setUnitsSelect = document.getElementById("set-units");
-const setThemeSelect = document.getElementById("set-theme");
-const setNotifyInput = document.getElementById("set-notify");
-const settingsExportBtn = document.getElementById("settings-export");
+
+const settingsAccountView = document.getElementById("settings-account-view");
 const settingsChangePwBtn = document.getElementById("settings-change-password-btn");
 const settingsDeleteAcctBtn = document.getElementById("settings-delete-account-btn");
+
+const settingsNotificationsView = document.getElementById("settings-notifications-view");
+const setNotifyInput = document.getElementById("set-notify");
+const settingsNotifyMsg = document.getElementById("settings-notify-msg");
+
+const settingsWorkoutsView = document.getElementById("settings-workouts-view");
+const setRestInput = document.getElementById("set-rest");
+const settingsWorkoutsMsg = document.getElementById("settings-workouts-msg");
+
+const settingsAppearanceView = document.getElementById("settings-appearance-view");
+const setThemeSelect = document.getElementById("set-theme");
+const setUnitsSelect = document.getElementById("set-units");
+const settingsAppearanceMsg = document.getElementById("settings-appearance-msg");
+
+const settingsDataView = document.getElementById("settings-data-view");
+const settingsExportBtn = document.getElementById("settings-export");
 
 const passwordView = document.getElementById("password-view");
 const passwordBackBtn = document.getElementById("password-back");
@@ -246,6 +263,26 @@ const deleteBackBtn = document.getElementById("delete-back");
 const setDeleteEmailInput = document.getElementById("set-delete-email");
 const settingsDeleteMsg = document.getElementById("settings-delete-msg");
 const settingsDeleteBtn = document.getElementById("settings-delete");
+
+// Progress-photo lock: the Settings sub-view and the unlock prompt.
+const settingsPhotoPinBtn = document.getElementById("settings-photo-pin-btn");
+const photoPinView = document.getElementById("photo-pin-view");
+const photoPinBackBtn = document.getElementById("photo-pin-back");
+const photoPinTitleEl = document.getElementById("photo-pin-title");
+const photoPinForm = document.getElementById("photo-pin-form");
+const photoPinCurrentField = document.getElementById("photo-pin-current-field");
+const photoPinCurrentInput = document.getElementById("photo-pin-current");
+const photoPinNewInput = document.getElementById("photo-pin-new");
+const photoPinConfirmInput = document.getElementById("photo-pin-confirm");
+const photoPinMsg = document.getElementById("photo-pin-msg");
+const photoPinSaveBtn = document.getElementById("photo-pin-save");
+const photoPinRemoveBtn = document.getElementById("photo-pin-remove");
+const photoPinDialogEl = document.getElementById("photo-pin-dialog");
+const photoPinInput = document.getElementById("photo-pin-input");
+const photoPinDialogErr = document.getElementById("photo-pin-dialog-err");
+const photoPinOkBtn = document.getElementById("photo-pin-ok");
+const photoPinCancelBtn = document.getElementById("photo-pin-cancel");
+const photoPinForgotBtn = document.getElementById("photo-pin-forgot");
 
 // Full JSON backup export / import (Settings)
 const settingsExportJsonBtn = document.getElementById("settings-export-json");
@@ -412,7 +449,9 @@ async function loadProfile() {
 const ALL_VIEWS = [
   home, exercisesView, exerciseCreateView, workoutView, routineView,
   historyView, historyDetailView, calendarView, measurementsView,
-  measurementEditorView, settingsView, passwordView, deleteView, trashView,
+  measurementEditorView, settingsView, settingsProfileView, settingsAccountView,
+  settingsNotificationsView, settingsWorkoutsView, settingsAppearanceView,
+  settingsDataView, passwordView, photoPinView, deleteView, trashView,
 ];
 
 function showView(el) {
@@ -526,6 +565,157 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+// --- Progress-photo lock ------------------------------------------------
+// A low-friction privacy gate for the Progress > Photos timeline. The PIN is
+// checked server-side (POST /api/auth/photo-pin/verify); `photoUnlocked` is a
+// per-document flag that re-locks on reload, on backgrounding the app, on
+// logout, and after PHOTO_LOCK_MS of being unlocked. This only hides the photos
+// in the UI -- the blobs are still reachable through the API and a data export.
+let photoUnlocked = false;
+let photoLockTimer = null;
+const PHOTO_LOCK_MS = 5 * 60 * 1000;
+
+function pinRequired() {
+  return !!currentUser?.photo_pin_set;
+}
+
+function lockPhotos() {
+  photoUnlocked = false;
+  clearTimeout(photoLockTimer);
+  photoLockTimer = null;
+  photoFeed = [];
+  photoFeedLoaded = false;
+  if (photoThumbObserver) photoThumbObserver.disconnect();
+  if (measurementPhotoViewerEl && !measurementPhotoViewerEl.hidden) closePhotoViewer();
+}
+
+function armPhotoLockTimer() {
+  clearTimeout(photoLockTimer);
+  photoLockTimer = setTimeout(lockPhotos, PHOTO_LOCK_MS);
+}
+
+// Resolves true once the photos are unlocked (or no PIN is set), false if the
+// user dismissed the prompt.
+async function ensurePhotoUnlock() {
+  if (!pinRequired() || photoUnlocked) return true;
+  const ok = await openPhotoPinDialog();
+  if (ok) {
+    photoUnlocked = true;
+    armPhotoLockTimer();
+  }
+  return ok;
+}
+
+let photoPinDialogResolve = null;
+
+function openPhotoPinDialog() {
+  return new Promise((resolve) => {
+    photoPinDialogResolve = resolve;
+    photoPinInput.value = "";
+    photoPinDialogErr.textContent = "";
+    openOverlay(photoPinDialogEl);
+    setTimeout(() => photoPinInput.focus(), 50);
+  });
+}
+
+function closePhotoPinDialog(result) {
+  if (!photoPinDialogResolve) return;
+  const done = photoPinDialogResolve;
+  photoPinDialogResolve = null;
+  closeOverlay(photoPinDialogEl);
+  done(result);
+}
+
+async function submitPhotoPinDialog() {
+  const pin = photoPinInput.value.trim();
+  if (!pin) return;
+  photoPinOkBtn.disabled = true;
+  try {
+    const res = await authFetch(API + "/photo-pin/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin }),
+    });
+    if (res.status === 204) {
+      closePhotoPinDialog(true);
+      return;
+    }
+    photoPinDialogErr.textContent = "Incorrect PIN.";
+    photoPinInput.value = "";
+    photoPinInput.focus();
+  } catch (err) {
+    photoPinDialogErr.textContent = err.message || "Could not reach the server.";
+  } finally {
+    photoPinOkBtn.disabled = false;
+  }
+}
+
+photoPinOkBtn.addEventListener("click", submitPhotoPinDialog);
+photoPinCancelBtn.addEventListener("click", () => closePhotoPinDialog(false));
+photoPinDialogEl.addEventListener("click", (e) => {
+  if (e.target === photoPinDialogEl) closePhotoPinDialog(false);
+});
+photoPinInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); submitPhotoPinDialog(); }
+});
+document.addEventListener("keydown", (e) => {
+  if (!photoPinDialogEl.hidden && e.key === "Escape") closePhotoPinDialog(false);
+});
+
+// "Forgot PIN?" -> confirm with the account password -> clear the lock. Anyone
+// with the password already has full access, so this grants nothing new.
+photoPinForgotBtn.addEventListener("click", async () => {
+  const pw = await appConfirm({
+    title: "Remove photo lock?",
+    body: "Enter your account password to turn off the progress-photo PIN.",
+    confirmLabel: "Remove lock",
+    prompt: { placeholder: "Account password" },
+  });
+  if (!pw) return;
+  try {
+    const res = await authFetch(API + "/photo-pin", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: pw }),
+    });
+    if (res.status === 204) {
+      if (currentUser) currentUser.photo_pin_set = false;
+      showToast("Photo lock removed");
+      closePhotoPinDialog(true);
+    } else {
+      photoPinDialogErr.textContent = "That password didn't match.";
+    }
+  } catch (err) {
+    photoPinDialogErr.textContent = err.message || "Could not reach the server.";
+  }
+});
+
+// Re-lock whenever the app is hidden (task switch, screen off, tab change).
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") lockPhotos();
+});
+
+// A placeholder shown in place of the timeline / compare view while locked.
+function renderPhotoLockedState(container) {
+  container.replaceChildren();
+  const box = document.createElement("div");
+  box.className = "photo-locked";
+  const glyph = document.createElement("div");
+  glyph.className = "photo-locked-glyph";
+  glyph.textContent = "🔒";
+  const text = document.createElement("p");
+  text.textContent = "Your progress photos are locked.";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "submit";
+  btn.textContent = "Unlock";
+  btn.addEventListener("click", async () => {
+    if (await ensurePhotoUnlock()) renderMeasurements();
+  });
+  box.append(glyph, text, btn);
+  container.append(box);
+}
+
 function showLoggedIn(user) {
   currentUser = user;
   editMode = false;
@@ -545,6 +735,7 @@ function showLoggedOut() {
   for (const v of ALL_VIEWS) v.hidden = true;
   menuBtn.hidden = true;
   closeSideMenu();
+  lockPhotos();
   stopDurationTimer();
   endRestTimer();
   activeWorkout = null;
@@ -697,6 +888,31 @@ logoutBtn.addEventListener("click", () => {
 // --- Exercises --------------------------------------------------------------
 const EXERCISES_API = "/api/exercises";
 
+// Where seeded exercise demo images live (bundled under backend/static/exercises/
+// as "<slug>/0.jpg"). Custom exercises carry `data:` URLs instead. To serve the
+// files from a CDN instead, point this at
+// "https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main/exercises/".
+const EXERCISE_IMG_BASE = "/exercises/";
+
+function exerciseImageSrc(ref) {
+  return /^(data:|https?:)/.test(ref) ? ref : EXERCISE_IMG_BASE + ref;
+}
+
+// Alternate an <img> between its frames (~1.2s each) for a GIF-like demo. The
+// loop stops on its own once the element leaves the DOM (details collapsed /
+// view changed) -- renderExerciseDetail's replaceChildren() drops the node.
+function animateExerciseFrames(img, urls) {
+  if (!urls || urls.length < 2) return;
+  let i = 0;
+  const tick = () => {
+    if (!img.isConnected) return;
+    i = (i + 1) % urls.length;
+    img.src = urls[i];
+    img._frameTimer = setTimeout(tick, 1200);
+  };
+  img._frameTimer = setTimeout(tick, 1200);
+}
+
 // Thrown when a request can't be completed for a reason that is NOT "the session
 // is dead" -- offline, a 5xx, a refresh that timed out. Callers that hold unsaved
 // data (saveWorkout) catch this, keep their local copy, and retry later. It must
@@ -826,12 +1042,61 @@ exercisesBack.addEventListener("click", closeExercises);
 // null = creating a new exercise; a uuid = editing that custom exercise.
 let editingExerciseId = null;
 
+// Up to 2 `data:` URLs for a custom exercise's example photos, edited in the form.
+let editorExerciseImages = [];
+const EXERCISE_MAX_IMAGES = 2;
+const exImagesInput = document.getElementById("ex-images");
+const exImagesListEl = document.getElementById("ex-images-list");
+
+function renderEditorExerciseImages() {
+  exImagesListEl.replaceChildren();
+  editorExerciseImages.forEach((src, i) => {
+    const thumb = document.createElement("div");
+    thumb.className = "measurement-photo-thumb";
+    const img = document.createElement("img");
+    img.src = src;
+    img.alt = `Example photo ${i + 1}`;
+    thumb.append(img);
+    const rm = document.createElement("button");
+    rm.type = "button";
+    rm.className = "measurement-photo-remove";
+    rm.textContent = "✕";
+    rm.setAttribute("aria-label", "Remove photo");
+    rm.addEventListener("click", () => {
+      editorExerciseImages.splice(i, 1);
+      renderEditorExerciseImages();
+    });
+    thumb.append(rm);
+    exImagesListEl.append(thumb);
+  });
+  exImagesInput.hidden = editorExerciseImages.length >= EXERCISE_MAX_IMAGES;
+}
+
+exImagesInput.addEventListener("change", async () => {
+  const files = [...(exImagesInput.files || [])];
+  exImagesInput.value = "";
+  const room = EXERCISE_MAX_IMAGES - editorExerciseImages.length;
+  if (room <= 0 || files.length === 0) return;
+  for (const file of files.slice(0, room)) {
+    try {
+      editorExerciseImages.push(await downscaleImage(file, 1024, 0.7));
+    } catch (err) {
+      addExerciseMessage.textContent = err.message || "Could not read that image.";
+    }
+  }
+  renderEditorExerciseImages();
+});
+
 // Open the shared create/edit form. Pass an exercise to edit it, or nothing to
 // add a new one.
 function openExerciseEditor(ex = null) {
   addExerciseForm.reset();
   addExerciseMessage.textContent = "";
   editingExerciseId = ex ? ex.id : null;
+  editorExerciseImages = ex && Array.isArray(ex.images)
+    ? ex.images.filter((s) => typeof s === "string" && s.startsWith("data:")).slice(0, EXERCISE_MAX_IMAGES)
+    : [];
+  renderEditorExerciseImages();
 
   const title = document.getElementById("exercise-create-title");
   if (ex) {
@@ -1178,6 +1443,34 @@ function renderExerciseDetail(ex, body, stats, opts = {}) {
     body.append(actions);
   }
 
+  // Example media: 2 stills (start / end position) that we alternate for a
+  // GIF-like demo. Tap to open the lightbox. Shown even before any history.
+  const imgRefs = Array.isArray(ex.images) ? ex.images.filter(Boolean) : [];
+  if (imgRefs.length) {
+    const urls = imgRefs.map(exerciseImageSrc);
+    const figure = document.createElement("figure");
+    figure.className = "exercise-media";
+    const img = document.createElement("img");
+    img.className = "exercise-media-img";
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.alt = `${ex.name} demonstration`;
+    // If the media isn't available (files not bundled, or a bad path), drop the
+    // whole figure rather than showing a broken-image box.
+    img.addEventListener("error", () => {
+      clearTimeout(img._frameTimer);
+      figure.remove();
+    }, { once: true });
+    img.src = urls[0];
+    img.addEventListener("click", () => {
+      clearTimeout(img._frameTimer);
+      openPhotoViewer(urls, 0, { bypassLock: true });
+    });
+    figure.append(img);
+    body.append(figure);
+    animateExerciseFrames(img, urls);
+  }
+
   if (!stats.performed_count) {
     const p = document.createElement("p");
     p.className = "exercise-empty";
@@ -1387,6 +1680,7 @@ addExerciseForm.addEventListener("submit", async (event) => {
     primary_muscles: lowerList("ex-muscles"),
     secondary_muscles: lowerList("ex-secondary-muscles"),
     instructions: splitList(document.getElementById("ex-instructions").value, "\n"),
+    images: editorExerciseImages,
   };
 
   const editing = editingExerciseId != null;
@@ -3651,7 +3945,12 @@ measurementsCompareBtn.addEventListener("click", () => {
   setMeasurementsMode(measurementsMode === "compare" ? "photos" : "compare");
 });
 
-function setMeasurementsMode(mode) {
+async function setMeasurementsMode(mode) {
+  // Tapping into the photo timeline / compare view prompts for the PIN straight
+  // away (a deliberate action); a dismissed prompt falls back to the list.
+  if ((mode === "photos" || mode === "compare") && !(await ensurePhotoUnlock())) {
+    mode = "measurements";
+  }
   measurementsMode = mode;
   if (mode !== "compare") {
     try { localStorage.setItem("measurementsMode", mode); } catch (e) { /* private mode */ }
@@ -3738,6 +4037,12 @@ function measurementPlaceholder(text) {
 
 function renderMeasurements() {
   if (measurementsMode === "exercises") return renderExerciseProgress();
+  const photoMode = measurementsMode === "photos" || measurementsMode === "compare";
+  if (photoMode && pinRequired() && !photoUnlocked) {
+    return renderPhotoLockedState(
+      measurementsMode === "compare" ? measurementsCompareEl : measurementsPhotosEl,
+    );
+  }
   if (measurementsMode === "photos") return renderPhotoTimeline();
   if (measurementsMode === "compare") return renderCompare();
   renderMeasurementsList();
@@ -3850,9 +4155,12 @@ function buildProgressExerciseRow(it) {
   row.addEventListener("toggle", () => {
     if (row.open && !loaded) {
       loaded = true;
-      // renderExerciseDetail only needs id / name / tracking_type / is_custom.
+      // renderExerciseDetail needs id / name / tracking_type / is_custom / images.
       loadExerciseDetail(
-        { id: it.id, name: it.name, tracking_type: it.tracking_type, is_custom: false },
+        {
+          id: it.id, name: it.name, tracking_type: it.tracking_type,
+          is_custom: false, images: it.images || [],
+        },
         body,
         { progressOnly: true },
       );
@@ -3897,6 +4205,7 @@ const photoThumbObserver =
     : null;
 
 async function loadPhotoFeed() {
+  if (pinRequired() && !photoUnlocked) throw new Error("Progress photos are locked.");
   const res = await authFetch(MEASUREMENTS_API + "/photos");
   if (!res.ok) throw new Error("Could not load your progress photos.");
   photoFeed = await res.json();   // newest-first: [{id, measured_on, values, photos[]}]
@@ -4178,6 +4487,12 @@ function buildMeasurementFieldRows(values) {
 // Render the photo thumbnails; show remove buttons + the file picker only while editing.
 function renderMeasurementPhotos() {
   measurementPhotosEl.replaceChildren();
+  // Belt-and-suspenders: openMeasurementEditor already forces an unlock before
+  // showing an entry that has photos, but never paint thumbnails while locked.
+  if (pinRequired() && !photoUnlocked) {
+    measurementPhotoInput.hidden = true;
+    return;
+  }
   measurementPhotos.forEach((src, i) => {
     const thumb = document.createElement("button");
     thumb.type = "button";
@@ -4244,9 +4559,18 @@ async function openMeasurementEditor(id) {
         return;
       }
       const entry = await res.json();
+      const entryPhotos = Array.isArray(entry.photos) ? entry.photos.slice() : [];
+      // An entry with photos needs an unlock before we show it -- backing out
+      // here avoids a later save silently wiping `photos`.
+      if (entryPhotos.length && pinRequired() && !photoUnlocked
+          && !(await ensurePhotoUnlock())) {
+        showView(measurementsView);
+        showToast("Unlock progress photos to view this entry.");
+        return;
+      }
       measurementDateInput.value = entry.measured_on;
       buildMeasurementFieldRows(entry.values || {});
-      measurementPhotos = Array.isArray(entry.photos) ? entry.photos.slice() : [];
+      measurementPhotos = entryPhotos;
       applyMeasurementEditMode(false);
     } catch (err) {
       measurementMsgEl.textContent = err.message || "Could not reach the server.";
@@ -4271,7 +4595,13 @@ function closeMeasurementEditor() {
 let viewerPhotos = [];
 let viewerIndex = 0;
 
-function openPhotoViewer(photos, startIndex = 0) {
+function openPhotoViewer(photos, startIndex = 0, { bypassLock = false } = {}) {
+  // The measurement photo strips and compare columns funnel through here, so one
+  // gate covers them all. Exercise demo media passes bypassLock (never private).
+  if (!bypassLock && pinRequired() && !photoUnlocked) {
+    ensurePhotoUnlock().then((ok) => { if (ok) openPhotoViewer(photos, startIndex); });
+    return;
+  }
   viewerPhotos = Array.isArray(photos) ? photos.slice() : [photos];
   viewerIndex = Math.max(0, Math.min(viewerPhotos.length - 1, startIndex | 0));
   showViewerPhoto();
@@ -4531,31 +4861,159 @@ menuTrashBtn.addEventListener("click", () => { closeSideMenu(); openTrash(); });
 trashBackBtn.addEventListener("click", () => showView(home));
 
 // --- Settings ------------------------------------------------------------
+// The main view is just a menu; each row opens its own page. Preference pages
+// auto-save on change; Profile (free text) keeps an explicit Save button.
 settingsBackBtn.addEventListener("click", () => showView(home));
-// Live preview -- the theme applies on change; "Save profile" persists it.
-if (setThemeSelect) {
-  setThemeSelect.addEventListener("change", () => applyTheme(setThemeSelect.value));
-}
+settingsSubBackBtns.forEach((b) =>
+  b.addEventListener("click", () => showView(settingsView)),
+);
+
+const SETTINGS_PAGES = {
+  profile: openSettingsProfile,
+  account: openSettingsAccount,
+  notifications: openSettingsNotifications,
+  workouts: openSettingsWorkouts,
+  appearance: openSettingsAppearance,
+  data: openSettingsData,
+};
+settingsNavRows.forEach((row) => {
+  row.addEventListener("click", () => SETTINGS_PAGES[row.dataset.settingsNav]?.());
+});
+
 settingsChangePwBtn.addEventListener("click", openChangePassword);
 settingsDeleteAcctBtn.addEventListener("click", openDeleteAccount);
-passwordBackBtn.addEventListener("click", () => showView(settingsView));
-deleteBackBtn.addEventListener("click", () => showView(settingsView));
+settingsPhotoPinBtn.addEventListener("click", openPhotoPinView);
+passwordBackBtn.addEventListener("click", () => showView(settingsAccountView));
+photoPinBackBtn.addEventListener("click", () => showView(settingsView));
+deleteBackBtn.addEventListener("click", () => showView(settingsAccountView));
 
 function openSettings() {
   showView(settingsView);
+}
+
+// PATCH a partial preferences object (the backend shallow-merges), refreshing
+// currentUser. `extra` carries non-preference fields (display_name / email).
+async function savePreferences(prefPatch, extra = {}) {
+  const res = await authFetch(API + "/me", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...extra, preferences: prefPatch }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(detailToText(data.detail) || "Could not save.");
+  currentUser = data;
+  return data;
+}
+
+// Briefly flash "Saved." on a message line.
+function flashSaved(el) {
+  setMsg(el, "Saved.", "ok");
+  clearTimeout(el._savedTimer);
+  el._savedTimer = setTimeout(() => { el.textContent = ""; }, 1800);
+}
+
+function openSettingsProfile() {
+  showView(settingsProfileView);
   setNameInput.value = currentUser?.display_name || "";
   setEmailInput.value = currentUser?.email || "";
-  setRestInput.value = currentUser?.preferences?.default_rest_seconds ?? 90;
-  setUnitsSelect.value = currentUser?.preferences?.measurement_units === "metric" ? "metric" : "imperial";
-  if (setThemeSelect) setThemeSelect.value = currentUser?.preferences?.theme || "system";
-  if (setNotifyInput) {
-    // Always interactive: turning the setting OFF never needs a service worker.
-    // Turning it ON is validated in the save handler (enablePushSubscription
-    // throws a clear message and reverts the box on an unsupported / http origin).
-    setNotifyInput.checked = pushEnabledPref();
-  }
   settingsProfileMsg.textContent = "";
 }
+
+function openSettingsAccount() {
+  showView(settingsAccountView);
+}
+
+function openSettingsNotifications() {
+  showView(settingsNotificationsView);
+  // Turning OFF never needs a service worker; turning ON is validated in the
+  // change handler (enablePushSubscription throws a clear message and reverts
+  // the box on an unsupported / http origin).
+  setNotifyInput.checked = pushEnabledPref();
+  settingsNotifyMsg.textContent = "";
+}
+
+function openSettingsWorkouts() {
+  showView(settingsWorkoutsView);
+  setRestInput.value = currentUser?.preferences?.default_rest_seconds ?? 90;
+  settingsWorkoutsMsg.textContent = "";
+}
+
+function openSettingsAppearance() {
+  showView(settingsAppearanceView);
+  if (setThemeSelect) setThemeSelect.value = currentUser?.preferences?.theme || "system";
+  setUnitsSelect.value =
+    currentUser?.preferences?.measurement_units === "metric" ? "metric" : "imperial";
+  settingsAppearanceMsg.textContent = "";
+}
+
+function openSettingsData() {
+  showView(settingsDataView);
+  settingsDataMsg.textContent = "";
+}
+
+// --- Auto-save handlers for the preference pages ---
+
+// Default rest timer: save on blur / Enter, clamped to 0..600.
+async function saveRestPref() {
+  const rest = Math.max(0, Math.min(600, parseInt(setRestInput.value, 10) || 0));
+  setRestInput.value = rest;
+  if (rest === (currentUser?.preferences?.default_rest_seconds ?? 90)) return;
+  setMsg(settingsWorkoutsMsg, "Saving…", "ok");
+  try {
+    await savePreferences({ default_rest_seconds: rest });
+    flashSaved(settingsWorkoutsMsg);
+  } catch (err) {
+    setMsg(settingsWorkoutsMsg, err.message);
+  }
+}
+setRestInput.addEventListener("change", saveRestPref);
+
+if (setThemeSelect) {
+  setThemeSelect.addEventListener("change", async () => {
+    applyTheme(setThemeSelect.value);          // live preview first
+    try {
+      await savePreferences({ theme: setThemeSelect.value });
+      flashSaved(settingsAppearanceMsg);
+    } catch (err) {
+      setMsg(settingsAppearanceMsg, err.message);
+    }
+  });
+}
+
+setUnitsSelect.addEventListener("change", async () => {
+  const units = setUnitsSelect.value === "metric" ? "metric" : "imperial";
+  try {
+    await savePreferences({ measurement_units: units });
+    flashSaved(settingsAppearanceMsg);
+  } catch (err) {
+    setMsg(settingsAppearanceMsg, err.message);
+    setUnitsSelect.value =
+      currentUser?.preferences?.measurement_units === "metric" ? "metric" : "imperial";
+  }
+});
+
+setNotifyInput.addEventListener("change", async () => {
+  const want = setNotifyInput.checked;
+  setMsg(settingsNotifyMsg, "Saving…", "ok");
+  try {
+    if (want && !pushEnabledPref()) {
+      await enablePushSubscription();
+    } else if (!want && pushEnabledPref()) {
+      await disablePushSubscription();
+    }
+  } catch (err) {
+    setNotifyInput.checked = false;
+    setMsg(settingsNotifyMsg, err.message || "Could not enable notifications.");
+    return;
+  }
+  try {
+    await savePreferences({ rest_push_enabled: want });
+    setNotifyInput.checked = pushEnabledPref();
+    flashSaved(settingsNotifyMsg);
+  } catch (err) {
+    setMsg(settingsNotifyMsg, err.message);
+  }
+});
 
 function openChangePassword() {
   showView(passwordView);
@@ -4571,6 +5029,98 @@ function openDeleteAccount() {
   settingsDeleteMsg.textContent = "";
 }
 
+function openPhotoPinView() {
+  const hasPin = !!currentUser?.photo_pin_set;
+  showView(photoPinView);
+  photoPinForm.reset();
+  photoPinMsg.textContent = "";
+  photoPinCurrentField.hidden = !hasPin;
+  photoPinTitleEl.textContent = hasPin ? "Change photo PIN" : "Progress photo lock";
+  photoPinSaveBtn.textContent = hasPin ? "Change PIN" : "Set PIN";
+  photoPinRemoveBtn.hidden = !hasPin;
+}
+
+photoPinForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  setMsg(photoPinMsg, "");
+  const hasPin = !!currentUser?.photo_pin_set;
+  const next = photoPinNewInput.value.trim();
+  const confirm = photoPinConfirmInput.value.trim();
+
+  if (!/^\d{4,8}$/.test(next)) {
+    setMsg(photoPinMsg, "PIN must be 4–8 digits.");
+    return;
+  }
+  if (next !== confirm) {
+    setMsg(photoPinMsg, "The two PINs don't match.");
+    return;
+  }
+
+  const payload = { new_pin: next };
+  if (hasPin) payload.current_pin = photoPinCurrentInput.value.trim();
+
+  photoPinSaveBtn.disabled = true;
+  try {
+    const res = await authFetch(API + "/photo-pin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setMsg(photoPinMsg, detailToText(data.detail) || "Could not save the PIN.");
+      return;
+    }
+    currentUser = data;
+    photoUnlocked = true;          // the user just proved they know it
+    armPhotoLockTimer();
+    showView(settingsView);
+    showToast(hasPin ? "PIN changed" : "Photo lock on");
+  } catch (err) {
+    setMsg(photoPinMsg, err.message || "Could not reach the server.");
+  } finally {
+    photoPinSaveBtn.disabled = false;
+  }
+});
+
+photoPinRemoveBtn.addEventListener("click", async () => {
+  const currentPin = photoPinCurrentInput.value.trim();
+  let body;
+  if (/^\d{4,8}$/.test(currentPin)) {
+    body = { pin: currentPin };
+  } else {
+    const pw = await appConfirm({
+      title: "Remove photo lock?",
+      body: "Enter your account password to confirm.",
+      confirmLabel: "Remove lock",
+      prompt: { placeholder: "Account password" },
+    });
+    if (!pw) return;
+    body = { password: pw };
+  }
+  photoPinRemoveBtn.disabled = true;
+  try {
+    const res = await authFetch(API + "/photo-pin", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.status === 204) {
+      if (currentUser) currentUser.photo_pin_set = false;
+      photoUnlocked = false;
+      showView(settingsView);
+      showToast("Photo lock removed");
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setMsg(photoPinMsg, detailToText(data.detail) || "Enter your current PIN or account password.");
+    }
+  } catch (err) {
+    setMsg(photoPinMsg, err.message || "Could not reach the server.");
+  } finally {
+    photoPinRemoveBtn.disabled = false;
+  }
+});
+
 function setMsg(el, text, kind = "error") {
   el.textContent = text;
   el.dataset.kind = kind;
@@ -4582,34 +5132,9 @@ settingsProfileForm.addEventListener("submit", async (event) => {
   saveBtn.disabled = true;
   setMsg(settingsProfileMsg, "");
 
-  const rest = Math.max(0, Math.min(600, parseInt(setRestInput.value, 10) || 0));
-
-  // The notifications toggle needs a browser permission + subscription before we
-  // can persist it as "on". Do that first; bail out of the whole save if the
-  // user denies permission or the server has push disabled.
-  const wantNotify = Boolean(setNotifyInput && setNotifyInput.checked);
-  if (wantNotify && !pushEnabledPref()) {
-    try {
-      await enablePushSubscription();
-    } catch (err) {
-      setMsg(settingsProfileMsg, err.message || "Could not enable notifications.");
-      if (setNotifyInput) setNotifyInput.checked = false;
-      saveBtn.disabled = false;
-      return;
-    }
-  } else if (!wantNotify && pushEnabledPref()) {
-    await disablePushSubscription();
-  }
-
   const payload = {
     display_name: setNameInput.value.trim(),
     email: setEmailInput.value.trim(),
-    preferences: {
-      default_rest_seconds: rest,
-      measurement_units: setUnitsSelect.value === "metric" ? "metric" : "imperial",
-      theme: setThemeSelect ? setThemeSelect.value : "system",
-      rest_push_enabled: wantNotify,
-    },
   };
   try {
     const res = await authFetch(API + "/me", {
@@ -4624,9 +5149,6 @@ settingsProfileForm.addEventListener("submit", async (event) => {
     }
     currentUser = data;
     whoEl.textContent = currentUser.display_name;
-    setRestInput.value = currentUser.preferences?.default_rest_seconds ?? rest;
-    applyTheme(currentUser.preferences?.theme || "system");
-    if (setNotifyInput) setNotifyInput.checked = pushEnabledPref();
     setMsg(settingsProfileMsg, "Saved.", "ok");
   } catch (err) {
     setMsg(settingsProfileMsg, err.message || "Could not reach the server.");
@@ -4658,7 +5180,7 @@ settingsPasswordForm.addEventListener("submit", async (event) => {
     if (res.status === 204) {
       setCurPwInput.value = "";
       setNewPwInput.value = "";
-      showView(settingsView);
+      showView(settingsAccountView);
       showToast("Password changed");
       return;
     }

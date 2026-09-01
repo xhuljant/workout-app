@@ -174,6 +174,11 @@
           <label for="ex-instructions">Instructions <span class="opt">optional, one step per line</span></label>
           <textarea id="ex-instructions" name="instructions" rows="3"></textarea>
         </div>
+        <div class="field">
+          <label for="ex-images">Example photos <span class="opt">optional, up to 2 (e.g. start &amp; end position)</span></label>
+          <input id="ex-images" type="file" accept="image/*" multiple />
+        </div>
+        <div id="ex-images-list" class="measurement-photos"></div>
         <p id="add-exercise-message" class="message" role="alert" aria-live="polite"></p>
         <button id="add-exercise-submit" class="submit" type="submit">Save exercise</button>
       </form>
@@ -343,14 +348,74 @@
       <button id="history-detail-delete" class="btn-danger settings-section" type="button">Delete this workout</button>
     </section>
 
-    <!-- Settings: opened from the home screen. -->
+    <!-- Settings: opened from the home screen. A navigation list; each row opens
+         its own page below. -->
     <section id="settings-view" class="subview" hidden>
       <div class="subview-head">
         <button id="settings-back" class="ghost" type="button" aria-label="Back to home">&larr;</button>
         <h2 class="subview-title">Settings</h2>
       </div>
 
-      <form id="settings-profile-form" class="settings-section" novalidate>
+      <div class="settings-nav">
+        <button class="settings-nav-row" type="button" data-settings-nav="profile">
+          <span class="settings-nav-text">
+            <span class="settings-nav-label">Profile</span>
+            <span class="settings-nav-sub">Display name, email</span>
+          </span>
+          <span class="settings-nav-chevron" aria-hidden="true">&rsaquo;</span>
+        </button>
+        <button class="settings-nav-row" type="button" data-settings-nav="account">
+          <span class="settings-nav-text">
+            <span class="settings-nav-label">Account</span>
+            <span class="settings-nav-sub">Password, delete account</span>
+          </span>
+          <span class="settings-nav-chevron" aria-hidden="true">&rsaquo;</span>
+        </button>
+        <button class="settings-nav-row" type="button" data-settings-nav="notifications">
+          <span class="settings-nav-text">
+            <span class="settings-nav-label">Notifications</span>
+            <span class="settings-nav-sub">Rest timer alerts</span>
+          </span>
+          <span class="settings-nav-chevron" aria-hidden="true">&rsaquo;</span>
+        </button>
+        <button class="settings-nav-row" type="button" data-settings-nav="workouts">
+          <span class="settings-nav-text">
+            <span class="settings-nav-label">Workouts</span>
+            <span class="settings-nav-sub">Default rest timer</span>
+          </span>
+          <span class="settings-nav-chevron" aria-hidden="true">&rsaquo;</span>
+        </button>
+        <button id="settings-photo-pin-btn" class="settings-nav-row" type="button">
+          <span class="settings-nav-text">
+            <span class="settings-nav-label">Privacy</span>
+            <span class="settings-nav-sub">Progress photo lock</span>
+          </span>
+          <span class="settings-nav-chevron" aria-hidden="true">&rsaquo;</span>
+        </button>
+        <button class="settings-nav-row" type="button" data-settings-nav="appearance">
+          <span class="settings-nav-text">
+            <span class="settings-nav-label">Appearance &amp; Units</span>
+            <span class="settings-nav-sub">Theme, measurement units</span>
+          </span>
+          <span class="settings-nav-chevron" aria-hidden="true">&rsaquo;</span>
+        </button>
+        <button class="settings-nav-row" type="button" data-settings-nav="data">
+          <span class="settings-nav-text">
+            <span class="settings-nav-label">Data</span>
+            <span class="settings-nav-sub">Export &amp; import</span>
+          </span>
+          <span class="settings-nav-chevron" aria-hidden="true">&rsaquo;</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Settings > Profile -->
+    <section id="settings-profile-view" class="subview" hidden>
+      <div class="subview-head">
+        <button class="ghost settings-sub-back" type="button" aria-label="Back to settings">&larr;</button>
+        <h2 class="subview-title">Profile</h2>
+      </div>
+      <form id="settings-profile-form" novalidate>
         <div class="field">
           <label for="set-name">Display name</label>
           <input id="set-name" type="text" autocomplete="name" />
@@ -359,36 +424,84 @@
           <label for="set-email">Email</label>
           <input id="set-email" type="email" autocomplete="email" />
         </div>
-        <div class="field">
-          <label for="set-rest">Default rest timer <span class="opt">seconds</span></label>
-          <input id="set-rest" type="number" inputmode="numeric" min="0" max="600" step="5" />
-        </div>
-        <div class="field">
-          <label for="set-units">Measurement units</label>
-          <select id="set-units">
-            <option value="imperial">Imperial (lb, in)</option>
-            <option value="metric">Metric (kg, cm)</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="set-theme">Theme</label>
-          <select id="set-theme">
-            <option value="system">Match device</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
-        </div>
-        <div class="field field--check">
-          <label for="set-notify">Rest timer notifications</label>
-          <label class="check-control">
-            <input id="set-notify" type="checkbox" />
-            <span>Alert with sound when a rest ends, even in the background</span>
-          </label>
-        </div>
         <p id="settings-profile-msg" class="message" role="alert" aria-live="polite"></p>
-        <button id="settings-profile-save" class="submit" type="submit">Save profile</button>
+        <button id="settings-profile-save" class="submit" type="submit">Save</button>
       </form>
+    </section>
 
+    <!-- Settings > Account -->
+    <section id="settings-account-view" class="subview" hidden>
+      <div class="subview-head">
+        <button class="ghost settings-sub-back" type="button" aria-label="Back to settings">&larr;</button>
+        <h2 class="subview-title">Account</h2>
+      </div>
+      <button id="settings-change-password-btn" class="btn-dark settings-section" type="button">
+        Change password
+      </button>
+      <button id="settings-delete-account-btn" class="btn-danger settings-section" type="button">
+        Delete account
+      </button>
+    </section>
+
+    <!-- Settings > Notifications -->
+    <section id="settings-notifications-view" class="subview" hidden>
+      <div class="subview-head">
+        <button class="ghost settings-sub-back" type="button" aria-label="Back to settings">&larr;</button>
+        <h2 class="subview-title">Notifications</h2>
+      </div>
+      <div class="field field--check">
+        <label for="set-notify">Rest timer notifications</label>
+        <label class="check-control">
+          <input id="set-notify" type="checkbox" />
+          <span>Alert with sound when a rest ends, even in the background</span>
+        </label>
+      </div>
+      <p id="settings-notify-msg" class="message" role="alert" aria-live="polite"></p>
+    </section>
+
+    <!-- Settings > Workouts -->
+    <section id="settings-workouts-view" class="subview" hidden>
+      <div class="subview-head">
+        <button class="ghost settings-sub-back" type="button" aria-label="Back to settings">&larr;</button>
+        <h2 class="subview-title">Workouts</h2>
+      </div>
+      <div class="field">
+        <label for="set-rest">Default rest timer <span class="opt">seconds</span></label>
+        <input id="set-rest" type="number" inputmode="numeric" min="0" max="600" step="5" />
+      </div>
+      <p id="settings-workouts-msg" class="message" role="alert" aria-live="polite"></p>
+    </section>
+
+    <!-- Settings > Appearance & Units -->
+    <section id="settings-appearance-view" class="subview" hidden>
+      <div class="subview-head">
+        <button class="ghost settings-sub-back" type="button" aria-label="Back to settings">&larr;</button>
+        <h2 class="subview-title">Appearance &amp; Units</h2>
+      </div>
+      <div class="field">
+        <label for="set-theme">Theme</label>
+        <select id="set-theme">
+          <option value="system">Match device</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="set-units">Measurement units</label>
+        <select id="set-units">
+          <option value="imperial">Imperial (lb, in)</option>
+          <option value="metric">Metric (kg, cm)</option>
+        </select>
+      </div>
+      <p id="settings-appearance-msg" class="message" role="alert" aria-live="polite"></p>
+    </section>
+
+    <!-- Settings > Data -->
+    <section id="settings-data-view" class="subview" hidden>
+      <div class="subview-head">
+        <button class="ghost settings-sub-back" type="button" aria-label="Back to settings">&larr;</button>
+        <h2 class="subview-title">Data</h2>
+      </div>
       <button id="settings-export" class="btn-dark settings-section" type="button">
         Export workout history (CSV)
       </button>
@@ -400,12 +513,6 @@
       </button>
       <input id="settings-import-file" type="file" accept="application/json,.json" hidden />
       <p id="settings-data-msg" class="message" role="alert" aria-live="polite"></p>
-      <button id="settings-change-password-btn" class="btn-dark settings-section" type="button">
-        Change password
-      </button>
-      <button id="settings-delete-account-btn" class="btn-danger settings-section" type="button">
-        Delete account
-      </button>
     </section>
 
     <!-- Change password: its own page, reached from Settings. -->
@@ -425,6 +532,39 @@
         </div>
         <p id="settings-password-msg" class="message" role="alert" aria-live="polite"></p>
         <button id="settings-password-save" class="submit" type="submit">Change password</button>
+      </form>
+    </section>
+
+    <!-- Progress photo lock: set / change / remove the PIN. Reached from Settings. -->
+    <section id="photo-pin-view" class="subview" hidden>
+      <div class="subview-head">
+        <button id="photo-pin-back" class="ghost" type="button" aria-label="Back to settings">&larr;</button>
+        <h2 id="photo-pin-title" class="subview-title">Progress photo lock</h2>
+      </div>
+      <p class="settings-danger-note">
+        Ask for a PIN before showing your progress photos. It re-locks when you
+        leave the app or after a few minutes. This hides the photos in the app;
+        it is not full encryption.
+      </p>
+      <form id="photo-pin-form" novalidate>
+        <div id="photo-pin-current-field" class="field" hidden>
+          <label for="photo-pin-current">Current PIN</label>
+          <input id="photo-pin-current" type="password" inputmode="numeric"
+                 pattern="[0-9]*" maxlength="8" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="photo-pin-new">New PIN <span class="opt">4–8 digits</span></label>
+          <input id="photo-pin-new" type="password" inputmode="numeric"
+                 pattern="[0-9]*" maxlength="8" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="photo-pin-confirm">Confirm PIN</label>
+          <input id="photo-pin-confirm" type="password" inputmode="numeric"
+                 pattern="[0-9]*" maxlength="8" autocomplete="off" />
+        </div>
+        <p id="photo-pin-msg" class="message" role="alert" aria-live="polite"></p>
+        <button id="photo-pin-save" class="submit" type="submit">Set PIN</button>
+        <button id="photo-pin-remove" class="ghost" type="button" hidden>Remove photo lock</button>
       </form>
     </section>
 
@@ -535,6 +675,23 @@
     </div>
   </div>
 
+  <!-- Progress photo unlock prompt. -->
+  <div id="photo-pin-dialog" class="modal" hidden>
+    <div class="modal-box">
+      <h3 class="modal-title">Enter PIN</h3>
+      <p class="modal-body">Your progress photos are locked.</p>
+      <input id="photo-pin-input" class="modal-input modal-input--pin" type="password"
+             inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off"
+             aria-label="PIN" />
+      <p id="photo-pin-dialog-err" class="message" role="alert" aria-live="polite"></p>
+      <div class="modal-actions">
+        <button id="photo-pin-forgot" class="ghost" type="button">Forgot PIN?</button>
+        <button id="photo-pin-cancel" class="ghost" type="button">Cancel</button>
+        <button id="photo-pin-ok" class="submit" type="button">Unlock</button>
+      </div>
+    </div>
+  </div>
+
   <!-- App-styled confirm / prompt (replaces window.confirm / window.prompt). -->
   <div id="confirm-dialog" class="modal" hidden>
     <div class="modal-box">
@@ -551,6 +708,6 @@
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=49"></script>
+  <script src="/app.js?v=51"></script>
 </body>
 </html>

@@ -99,6 +99,7 @@ def exercise_history(
             id=ex.id,
             name=ex.name,
             tracking_type=ex.tracking_type,
+            images=ex.images or [],
             last_performed=seen[str(ex.id)]["last"],
             session_count=seen[str(ex.id)]["count"],
         )
@@ -262,6 +263,7 @@ def create_exercise(
         primary_muscles=_clean_list(body.primary_muscles),
         secondary_muscles=_clean_list(body.secondary_muscles),
         instructions=_clean_list(body.instructions),
+        images=list(body.images),   # already validated to data:image/ URLs, max 2
         is_custom=True,
         created_by=current_user.id,
     )
@@ -322,6 +324,7 @@ def update_exercise(
     exercise.primary_muscles = _clean_list(body.primary_muscles)
     exercise.secondary_muscles = _clean_list(body.secondary_muscles)
     exercise.instructions = _clean_list(body.instructions)
+    exercise.images = list(body.images)
 
     if new_name != old_name:
         target = str(exercise_id)
