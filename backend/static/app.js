@@ -26,6 +26,36 @@ const store = {
   },
 };
 
+// --- Theme (System / Light / Dark) -------------------------------------
+// A saved "light"/"dark" is applied before first paint by an inline <head>
+// script; this keeps it in sync and updates the iOS PWA chrome colour. The
+// account's preferences.theme wins once the profile loads (multi-device sync).
+const THEME_META = { light: "#f5f6f8", dark: "#0b0b0d" };
+const darkMedia = window.matchMedia("(prefers-color-scheme: dark)");
+
+function applyTheme(theme) {
+  const t = theme === "light" || theme === "dark" ? theme : "system";
+  const root = document.documentElement;
+  if (t === "system") delete root.dataset.theme;
+  else root.dataset.theme = t;
+  try { localStorage.setItem("theme", t); } catch (e) { /* private mode */ }
+
+  const resolved = t === "system" ? (darkMedia.matches ? "dark" : "light") : t;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = THEME_META[resolved];
+}
+
+applyTheme((() => {
+  try { return localStorage.getItem("theme") || "system"; } catch (e) { return "system"; }
+})());
+
+// While on "system", follow OS appearance changes live.
+darkMedia.addEventListener("change", () => {
+  let saved = "system";
+  try { saved = localStorage.getItem("theme") || "system"; } catch (e) { /* ignore */ }
+  if (saved === "system") applyTheme("system");
+});
+
 // --- Elements ------------------------------------------------------------
 const tabLogin = document.getElementById("tab-login");
 const tabRegister = document.getElementById("tab-register");
@@ -127,6 +157,8 @@ const importConfirmBtn = document.getElementById("import-confirm");
 const homeHistoryEl = document.getElementById("home-history");
 const homeHistoryListEl = document.getElementById("home-history-list");
 const homeHistoryMoreBtn = document.getElementById("home-history-more");
+const homeCalendarEl = document.getElementById("home-calendar");
+const homeCalendarGridEl = document.getElementById("home-calendar-grid");
 const historyView = document.getElementById("history-view");
 const historyBackBtn = document.getElementById("history-back");
 const historyStatusEl = document.getElementById("history-status");
@@ -196,6 +228,7 @@ const setNameInput = document.getElementById("set-name");
 const setEmailInput = document.getElementById("set-email");
 const setRestInput = document.getElementById("set-rest");
 const setUnitsSelect = document.getElementById("set-units");
+const setThemeSelect = document.getElementById("set-theme");
 const setNotifyInput = document.getElementById("set-notify");
 const settingsExportBtn = document.getElementById("settings-export");
 const settingsChangePwBtn = document.getElementById("settings-change-password-btn");
@@ -496,6 +529,7 @@ document.addEventListener("keydown", (e) => {
 function showLoggedIn(user) {
   currentUser = user;
   editMode = false;
+  applyTheme(user.preferences?.theme || "system");   // account choice wins
   form.hidden = true;
   tabsEl.hidden = true;
   showView(home);
@@ -1155,6 +1189,23 @@ function renderExerciseDetail(ex, body, stats, opts = {}) {
   const mode = TRACKING[stats.tracking_type] ? stats.tracking_type : "weight_reps";
   const lb = (n) => (n == null ? "—" : `${fmtVolume(n)}`);
 
+  // Per-session chart first (like the Measurements screen) -- needs >= 2 points.
+  const CHART = {
+    weight_reps:  { key: "top_weight",   fmt: (n) => String(Math.round(n)), cap: "Top-set weight per session" },
+    reps:         { key: "top_reps",     fmt: (n) => String(Math.round(n)), cap: "Top reps per session" },
+    time:         { key: "top_seconds",  fmt: fmtTime, cap: "Longest time per session" },
+    distance_time:{ key: "top_distance", fmt: (n) => n.toFixed(1), cap: "Farthest distance per session" },
+  }[mode];
+  if (stats.sessions.length >= 2) {
+    const chart = buildExerciseChart(stats.sessions, CHART.key, CHART.fmt);
+    if (chart) {
+      const cap = document.createElement("span");
+      cap.className = "exercise-chart-cap";
+      cap.textContent = CHART.cap;
+      body.append(cap, chart);
+    }
+  }
+
   const grid = document.createElement("div");
   grid.className = "exercise-stats";
   if (mode === "weight_reps") {
@@ -1165,7 +1216,7 @@ function renderExerciseDetail(ex, body, stats, opts = {}) {
       statTile("Best est. 1RM", stats.best_1rm == null ? "—" : `~${lb(stats.best_1rm)}`),
       statTile("Most reps",
         stats.most_reps == null ? "—"
-          : `${stats.most_reps} × ${stats.most_reps_weight ?? "–"}`),
+          : `${stats.most_reps_weight ?? "–"} × ${stats.most_reps}`),
       statTile("Best session vol.", lb(stats.best_session_volume)),
       statTile("Total volume", lb(stats.total_volume)),
       statTile("Sessions", String(stats.performed_count)),
@@ -1195,17 +1246,6 @@ function renderExerciseDetail(ex, body, stats, opts = {}) {
     );
   }
   body.append(grid);
-
-  const CHART = {
-    weight_reps:  { key: "top_weight",   fmt: (n) => String(Math.round(n)) },
-    reps:         { key: "top_reps",     fmt: (n) => String(Math.round(n)) },
-    time:         { key: "top_seconds",  fmt: fmtTime },
-    distance_time:{ key: "top_distance", fmt: (n) => n.toFixed(1) },
-  }[mode];
-  if (stats.sessions.length >= 2) {
-    const chart = buildExerciseChart(stats.sessions, CHART.key, CHART.fmt);
-    if (chart) body.append(chart);
-  }
 
   const list = document.createElement("div");
   list.className = "exercise-sessions";
@@ -1369,12 +1409,17 @@ addExerciseForm.addEventListener("submit", async (event) => {
       return;
     }
 
-    if (editing) exerciseStatsCache.delete(editingExerciseId);
+    if (editing) {
+      exerciseStatsCache.clear();    // session rows show names; a rename cascaded
+    }
     editingExerciseId = null;
     addExerciseForm.reset();
     showView(exercisesView);
     await loadExercises();           // pick up the change + refreshed filters
-    if (editing) loadRoutines();     // routine displays may reference it
+    if (editing) {
+      loadRoutines();               // routine displays may reference it
+      loadHomeHistory();            // home preview + this-month calendar
+    }
     exerciseSearch.value = data.name || name;
     applyExerciseFilters();
   } catch (err) {
@@ -1552,7 +1597,7 @@ async function loadActiveWorkout() {
 // even when we're not on the workout screen (e.g. after a reload).
 function refreshStartButton() {
   const active = Boolean(activeWorkout);
-  startEmptyLabelEl.textContent = active ? "Resume workout" : "Start empty workout";
+  startEmptyLabelEl.textContent = active ? "Resume" : "Start empty";
   startEmptyBtn.classList.toggle("action--active", active);
   if (!active) startEmptyTimeEl.textContent = "";
   if (active && !durationTimer) startDurationTimer();
@@ -2856,7 +2901,7 @@ function openRoutineEditor(routine) {
   }
   originalRoutineJSON = JSON.stringify(editingRoutine);
 
-  routineTitleEl.textContent = routine ? "Edit Routine" : "New Routine";
+  routineTitleEl.textContent = routine ? "Edit routine" : "New routine";
   routineNameInput.value = editingRoutine.name;
   routineRestInput.value = editingRoutine.rest_seconds ?? "";
   routineShareBtn.hidden = !routine;
@@ -3191,6 +3236,29 @@ async function loadHomeHistory() {
   } catch (err) {
     homeHistoryEl.hidden = true;
   }
+  loadHomeCalendar();   // keep the current-month grid in sync with the preview
+}
+
+// Compact grid of the current month under "Recent workouts": days with a
+// finished workout are marked and tappable (same handlers as the full Calendar).
+async function loadHomeCalendar() {
+  try {
+    const res = await authFetch(WORKOUTS_API + "/calendar");
+    if (!res.ok) { homeCalendarEl.hidden = true; return; }
+    const items = await res.json();          // [{id, at, name}] ascending
+    if (items.length === 0) { homeCalendarEl.hidden = true; return; }
+    const now = new Date();
+    homeCalendarGridEl.replaceChildren(
+      buildCalendarMonth(
+        now.getFullYear(), now.getMonth(),
+        bucketWorkoutsByDay(items), calDayKey(now),
+        { compact: true },
+      ),
+    );
+    homeCalendarEl.hidden = false;
+  } catch (err) {
+    homeCalendarEl.hidden = true;
+  }
 }
 
 function openHistory() {
@@ -3341,16 +3409,21 @@ async function loadCalendar() {
   }
 }
 
-function renderCalendar(items) {
-  calendarStatusEl.textContent = items.length ? "" : "No workouts logged yet.";
-
-  // Bucket workouts by local day.
+// { "y-m-d": [{id, name, at}, ...] } keyed by local day.
+function bucketWorkoutsByDay(items) {
   const byDay = new Map();
   for (const w of items) {
     const key = calDayKey(new Date(w.at));
     if (!byDay.has(key)) byDay.set(key, []);
     byDay.get(key).push({ id: w.id, name: w.name || "Workout", at: w.at });
   }
+  return byDay;
+}
+
+function renderCalendar(items) {
+  calendarStatusEl.textContent = items.length ? "" : "No workouts logged yet.";
+
+  const byDay = bucketWorkoutsByDay(items);
 
   const now = new Date();
   const firstAt = items.length ? new Date(items[0].at) : now;
@@ -3374,14 +3447,18 @@ function renderCalendar(items) {
   }
 }
 
-function buildCalendarMonth(year, month, byDay, todayKey) {
+// opts.compact: for the home-screen mini month -- no month heading (the section
+// has its own), and workout days show a dot instead of the workout name.
+function buildCalendarMonth(year, month, byDay, todayKey, opts = {}) {
   const wrap = document.createElement("div");
   wrap.className = "calendar-month";
 
-  const label = document.createElement("div");
-  label.className = "calendar-month-label";
-  label.textContent = `${CAL_MONTHS[month]} ${year}`;
-  wrap.append(label);
+  if (!opts.compact) {
+    const label = document.createElement("div");
+    label.className = "calendar-month-label";
+    label.textContent = `${CAL_MONTHS[month]} ${year}`;
+    wrap.append(label);
+  }
 
   const head = document.createElement("div");
   head.className = "calendar-weekdays";
@@ -3420,14 +3497,20 @@ function buildCalendarMonth(year, month, byDay, todayKey) {
 
     if (workouts) {
       cell.classList.add("calendar-day--has-workout");
-
-      const label = document.createElement("div");
-      label.className = "calendar-day-label";
-      label.textContent = workouts.length === 1
-        ? workouts[0].name
-        : `${workouts[0].name} +${workouts.length - 1}`;
       cell.title = workouts.map((w) => w.name).join(", ");
-      cell.append(label);
+
+      if (opts.compact) {
+        const dot = document.createElement("span");
+        dot.className = "calendar-day-dot";
+        cell.append(dot);
+      } else {
+        const label = document.createElement("div");
+        label.className = "calendar-day-label";
+        label.textContent = workouts.length === 1
+          ? workouts[0].name
+          : `${workouts[0].name} +${workouts.length - 1}`;
+        cell.append(label);
+      }
 
       // One workout jumps straight to it; several open a chooser.
       cell.addEventListener("click", () => {
@@ -4449,6 +4532,10 @@ trashBackBtn.addEventListener("click", () => showView(home));
 
 // --- Settings ------------------------------------------------------------
 settingsBackBtn.addEventListener("click", () => showView(home));
+// Live preview -- the theme applies on change; "Save profile" persists it.
+if (setThemeSelect) {
+  setThemeSelect.addEventListener("change", () => applyTheme(setThemeSelect.value));
+}
 settingsChangePwBtn.addEventListener("click", openChangePassword);
 settingsDeleteAcctBtn.addEventListener("click", openDeleteAccount);
 passwordBackBtn.addEventListener("click", () => showView(settingsView));
@@ -4460,6 +4547,7 @@ function openSettings() {
   setEmailInput.value = currentUser?.email || "";
   setRestInput.value = currentUser?.preferences?.default_rest_seconds ?? 90;
   setUnitsSelect.value = currentUser?.preferences?.measurement_units === "metric" ? "metric" : "imperial";
+  if (setThemeSelect) setThemeSelect.value = currentUser?.preferences?.theme || "system";
   if (setNotifyInput) {
     // Always interactive: turning the setting OFF never needs a service worker.
     // Turning it ON is validated in the save handler (enablePushSubscription
@@ -4519,6 +4607,7 @@ settingsProfileForm.addEventListener("submit", async (event) => {
     preferences: {
       default_rest_seconds: rest,
       measurement_units: setUnitsSelect.value === "metric" ? "metric" : "imperial",
+      theme: setThemeSelect ? setThemeSelect.value : "system",
       rest_push_enabled: wantNotify,
     },
   };
@@ -4536,6 +4625,7 @@ settingsProfileForm.addEventListener("submit", async (event) => {
     currentUser = data;
     whoEl.textContent = currentUser.display_name;
     setRestInput.value = currentUser.preferences?.default_rest_seconds ?? rest;
+    applyTheme(currentUser.preferences?.theme || "system");
     if (setNotifyInput) setNotifyInput.checked = pushEnabledPref();
     setMsg(settingsProfileMsg, "Saved.", "ok");
   } catch (err) {

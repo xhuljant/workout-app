@@ -21,7 +21,10 @@ One shared library, seeded on first boot from a vendored snapshot of
 [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (~873 exercises).
 Any user can add a custom exercise and it becomes visible to everyone. Each
 exercise has a tracking mode — *weight × reps*, *reps only*, *time*, or
-*distance + time* — that determines how its sets are logged and scored.
+*distance + time* — that determines how its sets are logged and scored. Editing a
+custom exercise's name rewrites it in every past workout and current routine that
+used it; category / equipment / muscles aren't denormalized, so they update
+everywhere on their own.
 
 **Live workouts**
 Start an empty session or one pre-filled from a routine. The in-progress workout
@@ -54,6 +57,11 @@ Three tabs:
 - **Photos** — a date-ordered progress-photo timeline with each day's numbers
   beside it, a swipeable full-screen viewer, and a two-date **Compare** view
   with per-measurement deltas.
+
+**Appearance**
+Light / dark theme, set in Settings to **Match device**, **Light**, or **Dark**.
+The choice is saved to the account (syncs across devices) and mirrored to
+`localStorage` so it applies before first paint with no flash.
 
 **Data ownership**
 CSV export of every logged set; full-account JSON export and import

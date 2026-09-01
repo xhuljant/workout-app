@@ -10,7 +10,9 @@
   <meta name="apple-mobile-web-app-title" content="Workout Log" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <title>Workout Log</title>
-  <link rel="stylesheet" href="/style.css?v=44" />
+  <!-- Apply a saved Light/Dark choice before first paint, so there's no flash. -->
+  <script>try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
+  <link rel="stylesheet" href="/style.css?v=49" />
 </head>
 <body>
   <main class="card">
@@ -59,12 +61,12 @@
         <p class="home-greeting">Hi, <strong id="who"></strong></p>
       </div>
 
-      <button id="start-empty" class="action action--wide" type="button">
-        <span id="start-empty-label">Start empty workout</span><span id="start-empty-time" class="start-empty-time"></span>
-      </button>
-
-      <div class="action-row">
-        <button id="new-routine" class="action" type="button">New Routine</button>
+      <div class="action-row action-row--three">
+        <button id="start-empty" class="action" type="button">
+          <span id="start-empty-label">Start empty</span>
+          <span id="start-empty-time" class="start-empty-time"></span>
+        </button>
+        <button id="new-routine" class="action" type="button">New routine</button>
         <button id="exercises" class="action" type="button">Exercises</button>
       </div>
 
@@ -83,7 +85,7 @@
 
       <!-- Shown when the user has no routines at all. -->
       <p id="routine-empty" class="routine-empty" hidden>
-        No routines yet. Create one with New Routine.
+        No routines yet. Create one with New routine.
       </p>
 
       <!-- The 3 most recent finished workouts, always at the bottom. -->
@@ -91,6 +93,12 @@
         <h3 class="home-history-title">Recent workouts</h3>
         <div id="home-history-list" class="routine-list"></div>
         <button id="home-history-more" class="ghost" type="button">Load more history &rarr;</button>
+      </section>
+
+      <!-- Compact grid of the current month; days with a finished workout are marked. -->
+      <section id="home-calendar" class="home-calendar" hidden>
+        <h3 class="home-history-title">This month</h3>
+        <div id="home-calendar-grid"></div>
       </section>
     </section>
 
@@ -208,11 +216,11 @@
       </div>
     </section>
 
-    <!-- Routine editor: opened from "New Routine" or a routine's ⋮ menu. -->
+    <!-- Routine editor: opened from "New routine" or a routine's ⋮ menu. -->
     <section id="routine-view" class="subview" hidden>
       <div class="subview-head">
         <button id="routine-back" class="ghost" type="button" aria-label="Back to home">&larr;</button>
-        <h2 id="routine-title" class="subview-title">New Routine</h2>
+        <h2 id="routine-title" class="subview-title">New routine</h2>
       </div>
 
       <div class="field">
@@ -360,6 +368,14 @@
           <select id="set-units">
             <option value="imperial">Imperial (lb, in)</option>
             <option value="metric">Metric (kg, cm)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="set-theme">Theme</label>
+          <select id="set-theme">
+            <option value="system">Match device</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
           </select>
         </div>
         <div class="field field--check">
@@ -535,6 +551,6 @@
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=44"></script>
+  <script src="/app.js?v=49"></script>
 </body>
 </html>

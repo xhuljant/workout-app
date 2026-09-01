@@ -86,6 +86,46 @@ def test_exercise_history_empty_without_workouts(client, headers):
     assert client.get("/api/exercises/history", headers=headers).json() == []
 
 
+def test_rename_custom_exercise_cascades_to_history_and_routines(client, headers):
+    ex = client.post("/api/exercises", headers=headers, json={
+        "name": "Foo Lift", "tracking_type": "weight_reps",
+    }).json()
+
+    routine = client.post("/api/routines", headers=headers, json={
+        "name": "R", "content": {"exercises": [
+            {"exercise_id": ex["id"], "name": "Foo Lift",
+             "tracking_type": "weight_reps", "sets": [{"weight": 50, "reps": 5}]},
+        ]},
+    }).json()
+
+    client.post("/api/workouts", headers=headers)
+    client.put("/api/workouts/active", headers=headers, json={"content": {"exercises": [
+        {"exercise_id": ex["id"], "name": "Foo Lift", "tracking_type": "weight_reps",
+         "notes": "", "sets": [{"weight": 60, "reps": 5, "done": True}]},
+    ]}})
+    workout = client.post("/api/workouts/active/finish", headers=headers).json()
+
+    r = client.put(f"/api/exercises/{ex['id']}", headers=headers, json={
+        "name": "Bar Lift", "tracking_type": "weight_reps",
+    })
+    assert r.status_code == 200
+
+    got_routine = next(x for x in client.get("/api/routines", headers=headers).json()
+                       if x["id"] == routine["id"])
+    assert got_routine["content"]["exercises"][0]["name"] == "Bar Lift"
+
+    got_workout = client.get(f"/api/workouts/{workout['id']}", headers=headers).json()
+    assert got_workout["content"]["exercises"][0]["name"] == "Bar Lift"
+    assert got_workout["content_version"] == workout["content_version"] + 1
+
+    # Renaming to the same value is a no-op -- no version thrash.
+    client.put(f"/api/exercises/{ex['id']}", headers=headers, json={
+        "name": "Bar Lift", "tracking_type": "weight_reps",
+    })
+    again = client.get(f"/api/workouts/{workout['id']}", headers=headers).json()
+    assert again["content_version"] == workout["content_version"] + 1
+
+
 def test_cannot_edit_or_delete_seeded_exercise(client, headers, a_weight_exercise):
     edit = client.put(f"/api/exercises/{a_weight_exercise}", headers=headers, json={
         "name": "hijacked", "tracking_type": "weight_reps",

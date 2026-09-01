@@ -224,6 +224,29 @@ def _clean_list(items: list[str]) -> list[str]:
     return [s.strip() for s in items if s.strip()]
 
 
+def _rename_in_content(rows, target_id: str, new_name: str) -> None:
+    """Rewrite the denormalized exercise `name` inside every workout/routine
+    `content` blob that references `target_id`, so a rename shows up in past
+    history and current routines. Bumps `content_version` on workouts it touches
+    (routines have no such column).
+
+    Builds a fresh list of fresh dicts -- mutating the loaded content in place
+    would also mutate SQLAlchemy's "old" value, so no UPDATE would be emitted
+    (JSONB columns here aren't MutableDict-tracked)."""
+    for row in rows:
+        exs = (row.content or {}).get("exercises", [])
+        new_exs = [
+            {**e, "name": new_name}
+            if str(e.get("exercise_id") or "") == target_id
+            else e
+            for e in exs
+        ]
+        if new_exs != exs:
+            row.content = {**(row.content or {}), "exercises": new_exs}
+            if getattr(row, "content_version", None):
+                row.content_version += 1
+
+
 @router.post("", response_model=ExercisePublic, status_code=status.HTTP_201_CREATED)
 def create_exercise(
     body: ExerciseCreate,
@@ -278,6 +301,11 @@ def update_exercise(
     """Edit a custom exercise. Any signed-in user may edit any custom exercise --
     the library is one shared table.
 
+    A rename cascades: the denormalized `name` in every past workout's and
+    current routine's `content` is rewritten so history and routines stay in
+    sync. `category` / `equipment` / muscles aren't denormalized, so they update
+    everywhere automatically.
+
     Note: changing `tracking_type` only affects future workouts and routine
     entries. Existing workout `content` blobs keep their own per-entry snapshot,
     but the /stats endpoint reads the live value, so past sessions of a re-typed
@@ -285,13 +313,25 @@ def update_exercise(
     change it.
     """
     exercise = _custom_exercise(db, exercise_id)
-    exercise.name = body.name.strip()
+    old_name = exercise.name
+    new_name = body.name.strip()
+    exercise.name = new_name
     exercise.tracking_type = body.tracking_type
     exercise.category = body.category or None
     exercise.equipment = body.equipment or None
     exercise.primary_muscles = _clean_list(body.primary_muscles)
     exercise.secondary_muscles = _clean_list(body.secondary_muscles)
     exercise.instructions = _clean_list(body.instructions)
+
+    if new_name != old_name:
+        target = str(exercise_id)
+        _rename_in_content(
+            db.query(Workout).filter(Workout.deleted_at.is_(None)).all(), target, new_name
+        )
+        _rename_in_content(
+            db.query(Routine).filter(Routine.deleted_at.is_(None)).all(), target, new_name
+        )
+
     db.commit()
     db.refresh(exercise)
     return exercise

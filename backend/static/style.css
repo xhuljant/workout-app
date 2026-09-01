@@ -2,6 +2,9 @@
    A dark, focused look with a single blue accent, echoing the workout-tracker
    aesthetic. Restrained on purpose: a login screen should feel calm and fast. */
 
+/* Dark-first: :root is the dark palette. A light palette overrides these tokens
+   under an explicit [data-theme="light"] and (for "match device") a
+   prefers-color-scheme:light media query -- see below. */
 :root {
   --bg: #0b0b0d;          /* near-black page background */
   --surface: #151519;     /* the card */
@@ -15,8 +18,51 @@
   --active-press: #16a34a;
   --error: #ff6b6b;
   --ok: #4ade80;
+  --pr-bg: #3a2f00;       /* personal-record badge */
+  --pr-fg: #ffd54a;
   --radius: 14px;
+  color-scheme: dark;
 }
+
+/* Light palette. Explicit choice ([data-theme="light"]) and "match device"
+   (prefers-color-scheme:light, unless the user forced dark) share these values. */
+:root[data-theme="light"] {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #eef0f4;
+  --border: #d7dae1;
+  --text: #16161a;
+  --muted: #666674;
+  --accent: #1f6fe0;
+  --accent-press: #195cc0;
+  --active: #15a34a;
+  --active-press: #0f8a3e;
+  --error: #d23b3b;
+  --ok: #157f43;
+  --pr-bg: #fff3d1;
+  --pr-fg: #8a6a00;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]):not([data-theme="light"]) {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --surface-2: #eef0f4;
+    --border: #d7dae1;
+    --text: #16161a;
+    --muted: #666674;
+    --accent: #1f6fe0;
+    --accent-press: #195cc0;
+    --active: #15a34a;
+    --active-press: #0f8a3e;
+    --error: #d23b3b;
+    --ok: #157f43;
+    --pr-bg: #fff3d1;
+    --pr-fg: #8a6a00;
+    color-scheme: light;
+  }
+}
+:root[data-theme="dark"] { color-scheme: dark; }   /* forced dark on a light OS */
 
 * { box-sizing: border-box; }
 
@@ -24,11 +70,10 @@
    (e.g. .tabs sets display:grid), otherwise JS toggling `.hidden` does nothing. */
 [hidden] { display: none !important; }
 
-/* Paint the root dark too, so the iOS status-bar / home-indicator strips and the
-   overscroll bounce don't flash the browser's default white canvas. */
+/* Paint the root too, so the iOS status-bar / home-indicator strips and the
+   overscroll bounce don't flash the browser's default canvas. */
 html {
   background: var(--bg);
-  color-scheme: dark;
 }
 
 body {
@@ -303,8 +348,8 @@ button.settings-section { width: 100%; }
   background: var(--error);
 }
 
-/* Big tappable buttons: "Start empty workout", "New Routine", "Exercises",
-   and one per routine. Same accent treatment as .submit, just rounder. */
+/* Big tappable buttons: "Start empty", "New routine", "Exercises", and one per
+   routine. Same accent treatment as .submit, just rounder. */
 .action {
   width: 100%;
   padding: 22px 16px;
@@ -320,25 +365,35 @@ button.settings-section { width: 100%; }
 .action:hover { background: var(--accent-press); }
 .action:active { transform: translateY(1px); }
 
-.action--wide { margin-bottom: 14px; }
-
-/* "Start empty workout" turns green while a workout is in progress */
+/* "Start" turns green while a workout is in progress */
 .action--active { background: var(--active); }
 .action--active:hover { background: var(--active-press); }
 .start-empty-time {
-  margin-left: 10px;
   font-weight: 600;
+  font-size: 11px;
   opacity: 0.9;
   font-variant-numeric: tabular-nums;
 }
 .start-empty-time:empty { display: none; }
 
-/* "New Routine" / "Exercises" side by side */
+/* Home: Start empty / New routine / Exercises on one row */
 .action-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 14px;
   margin-bottom: 14px;
+}
+.action-row--three { grid-template-columns: repeat(3, 1fr); }
+.action-row--three .action {
+  padding: 15px 8px;
+  font-size: 14px;
+  border-radius: 16px;
+  line-height: 1.15;
+  min-height: 62px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
 }
 
 /* "Routines" heading row with the + Folder / Edit buttons */
@@ -695,7 +750,17 @@ button.settings-section { width: 100%; }
 }
 .exercise-stat-value { font-size: 14px; font-weight: 700; }
 
+.exercise-chart-cap {
+  display: block;
+  margin-top: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
 .exercise-chart { margin-top: 12px; }
+.exercise-chart-cap + .exercise-chart { margin-top: 4px; }
 .exercise-chart svg { width: 100%; height: auto; display: block; }
 .exercise-chart-line { fill: none; stroke: var(--accent); stroke-width: 2; }
 .exercise-chart-dot { fill: var(--accent); }
@@ -921,9 +986,9 @@ button.settings-section { width: 100%; }
   white-space: nowrap;
 }
 .set-num--pr {
-  background: #3a2f00;
-  color: #ffd54a;
-  box-shadow: inset 0 0 0 1px #ffd54a55;
+  background: var(--pr-bg);
+  color: var(--pr-fg);
+  box-shadow: inset 0 0 0 1px currentColor;
 }
 /* Routine editor drops PREV + done: SET | LBS | REPS | remove */
 .sets-grid--template { grid-template-columns: 2rem 1fr 1fr 1.5rem; }
@@ -1025,7 +1090,7 @@ button.settings-section { width: 100%; }
   padding: 10px 18px;
   border-radius: 999px;
   background: var(--surface);
-  border: 1px solid #ffd54a55;
+  border: 1px solid var(--pr-fg);
   color: var(--text);
   font-size: 13px;
   font-weight: 700;
@@ -1279,6 +1344,22 @@ button.calendar-day { margin: 0; appearance: none; cursor: pointer; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Home-screen compact month (below "Recent workouts") */
+.home-calendar { margin-top: 18px; }
+.home-calendar .calendar-day {
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+.home-calendar .calendar-day-num { font-size: 12px; }
+.calendar-day-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 
 /* "Which workout?" chooser for calendar days with more than one workout */
