@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="#2f81f7">
+  <title>Workout Log</title>
+  <!-- dumbbell: end caps, plates, bar -->
+  <rect x="3.2" y="11.6" width="2.8" height="8.8" rx="0.8"/>
+  <rect x="26.0" y="11.6" width="2.8" height="8.8" rx="0.8"/>
+  <rect x="6.3" y="8.25" width="3.4" height="15.5" rx="1"/>
+  <rect x="22.3" y="8.25" width="3.4" height="15.5" rx="1"/>
+  <rect x="9.5" y="14.2" width="13" height="3.6" rx="1.8"/>
+</svg>

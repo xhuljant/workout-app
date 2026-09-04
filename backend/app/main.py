@@ -22,6 +22,7 @@ from sqlalchemy import text
 
 from .database import SessionLocal
 from . import models  # noqa: F401  -- importing this registers our tables on Base
+from .maintenance import reap_stale_workouts
 from .push_sender import reminder_loop
 from .routers import auth, exercises, workouts, routines, folders, measurements, data, push
 from .seed import seed_exercises
@@ -51,6 +52,16 @@ async def lifespan(app: FastAPI):
             print(f"Purged {purged_w} workout(s) and {purged_m} measurement(s) from Trash.")
 
         db.commit()
+
+        # Close out workouts that were started and then forgotten (see
+        # maintenance.py). Also happens lazily on the workout endpoints; this
+        # catches sessions whose owner never comes back.
+        reaped_fin, reaped_disc = reap_stale_workouts(db)
+        if reaped_fin or reaped_disc:
+            print(
+                f"Reaped stale workouts: {reaped_fin} finished, "
+                f"{reaped_disc} discarded."
+            )
 
     # Background sender for "rest timer done" Web Push notifications. It no-ops
     # internally when VAPID keys aren't configured, so it's always safe to start.

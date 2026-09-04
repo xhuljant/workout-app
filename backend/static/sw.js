@@ -38,6 +38,8 @@ self.addEventListener("push", (event) => {
       await self.registration.showNotification(title, {
         body,
         tag,
+        icon: "/icon-192.png",
+        badge: "/icon-192.png",
         renotify: true,
         vibrate: [200, 100, 200],
         silent: false,

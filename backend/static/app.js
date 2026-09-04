@@ -2655,6 +2655,16 @@ async function saveWorkout({ keepalive = false } = {}) {
     await handleSaveConflict(id, res);
     return;
   }
+  if (res.status === 404) {
+    // The server has no active workout anymore -- it was finished/discarded on
+    // another device, or auto-closed after being left untouched for hours.
+    // Retrying the save can never succeed, so stop and reset the UI.
+    if (activeWorkout && activeWorkout.id === id) {
+      showToast("This workout was closed (left running too long)");
+      endWorkoutUI();
+    }
+    return;
+  }
   if (!res.ok) {
     scheduleSaveRetry();
     return;
@@ -2810,7 +2820,7 @@ workoutFinishBtn.addEventListener("click", async () => {
     await saveWorkout();     // persist the latest edits first
     await maybeSyncRoutineFromWorkout();
     const res = await authFetch(WORKOUTS_API + "/active/finish", { method: "POST" });
-    if (!res.ok) return;
+    if (!res.ok && res.status !== 404) return;   // 404: already closed server-side
     endWorkoutUI();
   } catch (err) {
     /* stay on the workout screen */

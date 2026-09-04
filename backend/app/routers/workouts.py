@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import get_current_user
+from ..maintenance import reap_stale_workouts
 from ..models import Routine, User, Workout
 from ..schemas import (
     ExercisePrevious,
@@ -122,6 +123,9 @@ def start_workout(
     """Start a workout. Idempotent: if one is already in progress, return that one
     instead of creating a second. `routine_id` pre-fills from a routine template;
     `from_workout_id` repeats a past workout."""
+    # Clear out a workout that was started and forgotten, so it doesn't block
+    # this one via the one-active-workout-per-user index.
+    reap_stale_workouts(db)
     existing = _active_workout(db, current_user)
     if existing is not None:
         return existing
@@ -305,6 +309,9 @@ def get_active_workout(
 ):
     """The current user's active workout, or null if there isn't one. The client
     calls this on load to resume where it left off."""
+    # A workout untouched for hours is treated as abandoned and closed out here,
+    # so the client sees `null` and resets instead of auto-resuming into it.
+    reap_stale_workouts(db)
     return _active_workout(db, current_user)
 
 
