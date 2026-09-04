@@ -34,8 +34,10 @@ from ..schemas import (
 router = APIRouter(prefix="/api/workouts", tags=["workouts"])
 
 
-def _summarize(workout: Workout) -> WorkoutSummary:
-    """Roll a workout's JSONB content up into a History list row."""
+def _summarize(workout: Workout, routine_names: dict | None = None) -> WorkoutSummary:
+    """Roll a workout's JSONB content up into a History list row. `routine_names`
+    maps routine id -> name so the row can show the workout's name without the
+    client having to have its routine list loaded."""
     exercises = (workout.content or {}).get("exercises", [])
     set_count = 0
     volume = 0.0
@@ -47,6 +49,7 @@ def _summarize(workout: Workout) -> WorkoutSummary:
     return WorkoutSummary(
         id=workout.id,
         routine_id=workout.routine_id,
+        name=(routine_names or {}).get(workout.routine_id, ""),
         started_at=workout.started_at,
         finished_at=workout.finished_at,
         exercise_count=len(exercises),
@@ -198,7 +201,11 @@ def list_workouts(
         .limit(limit)
         .all()
     )
-    return [_summarize(w) for w in rows]
+    routine_names = {
+        r.id: r.name
+        for r in db.query(Routine).filter(Routine.user_id == current_user.id).all()
+    }
+    return [_summarize(w, routine_names) for w in rows]
 
 
 @router.get("/calendar", response_model=list[WorkoutCalendarEntry])

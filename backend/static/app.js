@@ -3477,6 +3477,26 @@ function routineName(routineId) {
   return r ? r.name : "Workout";
 }
 
+// A human label for a workout. Prefers the server-supplied routine name; falls
+// back to a client-side routine lookup (for endpoints that don't send it), then
+// to a time-of-day label so ad-hoc workouts still read as something.
+function timeOfDayLabel(iso) {
+  const h = iso ? new Date(iso).getHours() : 12;
+  if (h < 5 || h >= 21) return "Night workout";
+  if (h < 12) return "Morning workout";
+  if (h < 17) return "Afternoon workout";
+  return "Evening workout";
+}
+
+function workoutLabel(w) {
+  if (w.name) return w.name;
+  if (w.routine_id) {
+    const r = routines.find((x) => x.id === w.routine_id);
+    if (r) return r.name;
+  }
+  return timeOfDayLabel(w.finished_at || w.started_at || w.at);
+}
+
 // Where the history detail was opened from, so its back button returns there.
 let historyDetailFrom = home;
 
@@ -3495,7 +3515,7 @@ function buildHistoryRow(w) {
   main.className = "history-row-main";
   const title = document.createElement("span");
   title.className = "history-row-title";
-  title.textContent = routineName(w.routine_id);
+  title.textContent = workoutLabel(w);
   const meta = document.createElement("span");
   meta.className = "history-row-meta";
   meta.textContent =
@@ -3627,7 +3647,7 @@ async function openHistoryDetail(id) {
       return;
     }
     const w = await res.json();
-    historyDetailTitleEl.textContent = routineName(w.routine_id);
+    historyDetailTitleEl.textContent = workoutLabel(w);
     historyDetailMetaEl.textContent = fmtDate(w.finished_at || w.started_at);
     renderWorkoutReadonly(historyDetailExercisesEl, w.content);
   } catch (err) {
@@ -3709,7 +3729,7 @@ function bucketWorkoutsByDay(items) {
   for (const w of items) {
     const key = calDayKey(new Date(w.at));
     if (!byDay.has(key)) byDay.set(key, []);
-    byDay.get(key).push({ id: w.id, name: w.name || "Workout", at: w.at });
+    byDay.get(key).push({ id: w.id, name: w.name || timeOfDayLabel(w.at), at: w.at });
   }
   return byDay;
 }

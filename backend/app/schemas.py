@@ -246,6 +246,7 @@ class WorkoutSummary(BaseModel):
     """A finished workout as it appears in the History list (no full set data)."""
     id: uuid.UUID
     routine_id: uuid.UUID | None
+    name: str               # routine name; "" for ad-hoc (routine-less) workouts
     started_at: datetime
     finished_at: datetime | None
     exercise_count: int

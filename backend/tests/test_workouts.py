@@ -31,6 +31,19 @@ def test_workout_lifecycle_and_history(client, headers, a_weight_exercise):
     assert len(hist) == 1
     assert hist[0]["set_count"] == 1
     assert hist[0]["volume"] == 500
+    assert hist[0]["name"] == ""          # ad-hoc workout: no routine name
+
+
+def test_history_row_carries_routine_name(client, headers):
+    routine = client.post("/api/routines", headers=headers, json={
+        "name": "Leg day", "content": {"exercises": []},
+    }).json()
+    client.post("/api/workouts", headers=headers, json={"routine_id": routine["id"]})
+    client.post("/api/workouts/active/finish", headers=headers)
+
+    hist = client.get("/api/workouts", headers=headers).json()
+    assert hist[0]["routine_id"] == routine["id"]
+    assert hist[0]["name"] == "Leg day"
 
 
 def test_stale_content_version_conflicts(client, headers, a_weight_exercise):
