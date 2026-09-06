@@ -4555,17 +4555,10 @@ async function renderPhotoTimeline() {
     );
     return;
   }
-  // The viewer pages through every progress photo, not just one entry's set, so
-  // hand each card the flat list and its own starting offset into it.
-  const allPhotos = photoFeed.flatMap((e) => e.photos);
-  let offset = 0;
-  for (const item of photoFeed) {
-    measurementsPhotosEl.append(buildPhotoTimelineCard(item, allPhotos, offset));
-    offset += item.photos.length;
-  }
+  for (const item of photoFeed) measurementsPhotosEl.append(buildPhotoTimelineCard(item));
 }
 
-function buildPhotoTimelineCard(item, allPhotos = item.photos, startOffset = 0) {
+function buildPhotoTimelineCard(item) {
   const card = document.createElement("div");
   card.className = "photo-timeline-card";
 
@@ -4583,7 +4576,7 @@ function buildPhotoTimelineCard(item, allPhotos = item.photos, startOffset = 0) 
     const img = document.createElement("img");
     img.className = "photo-timeline-thumb photo-timeline-thumb--loading";
     img.alt = `Progress photo ${i + 1} from ${fmtYmd(item.measured_on)}`;
-    img.addEventListener("click", () => openPhotoViewer(allPhotos, startOffset + i));
+    img.addEventListener("click", () => openPhotoViewer(item.photos, i));
     photoThumbSrc.set(img, src);
     if (photoThumbObserver) photoThumbObserver.observe(img);
     else { img.src = src; img.classList.remove("photo-timeline-thumb--loading"); }
@@ -5147,6 +5140,12 @@ function closeSideMenu() {
   menuBtn.setAttribute("aria-expanded", "false");
 }
 menuBtn.addEventListener("click", openSideMenu);
+
+// Tapping the "Workout Log" wordmark reloads the app -- a quick way to recover
+// from a stuck view or pull the latest assets.
+for (const el of document.querySelectorAll(".brand-mark, .brand-name")) {
+  el.addEventListener("click", () => location.reload());
+}
 menuCloseBtn.addEventListener("click", closeSideMenu);   // "Back" at the top of the panel
 sideMenu.addEventListener("click", (e) => {          // tap the dimmed area to close
   if (e.target === sideMenu) closeSideMenu();

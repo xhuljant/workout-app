@@ -155,8 +155,8 @@ body {
   gap: 10px;
   margin-bottom: 22px;
 }
-.brand-mark { color: var(--accent); display: inline-flex; align-items: center; }
-.brand-name { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: 0.02em; }
+.brand-mark { color: var(--accent); display: inline-flex; align-items: center; cursor: pointer; }
+.brand-name { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: 0.02em; cursor: pointer; }
 
 /* Hamburger button in the wordmark header -- opens the right-side menu.
    Only shown on the home screen (app.js toggles `hidden`). */

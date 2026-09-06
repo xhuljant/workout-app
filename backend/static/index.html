@@ -15,7 +15,7 @@
   <title>Workout Log</title>
   <!-- Apply a saved Light/Dark choice before first paint, so there's no flash. -->
   <script>try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
-  <link rel="stylesheet" href="/style.css?v=57" />
+  <link rel="stylesheet" href="/style.css?v=58" />
 </head>
 <body>
   <main class="card">
@@ -30,7 +30,7 @@
           <rect x="9.5" y="14.2" width="13" height="3.6" rx="1.8"/>
         </svg>
       </span>
-      <h1 class="brand-name">Workout Log</h1>
+      <h1 class="brand-name" title="Reload">Workout Log</h1>
       <button id="menu-btn" class="brand-menu" type="button"
               aria-label="Menu" aria-haspopup="true" aria-expanded="false" hidden>
         <span class="brand-menu-bars" aria-hidden="true"></span>
@@ -823,6 +823,6 @@
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=59"></script>
+  <script src="/app.js?v=60"></script>
 </body>
 </html>
