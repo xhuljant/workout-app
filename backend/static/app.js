@@ -1943,6 +1943,7 @@ function openWorkout() {
 function closeWorkout() {
   flushWorkoutSave();
   refreshStartButton();
+  closeOverlay(plateCalcEl);   // don't leave the calculator floating over home
   showView(home);
 }
 workoutBack.addEventListener("click", closeWorkout);
@@ -1979,7 +1980,9 @@ function buildExerciseBlock(entry, exIndex) {
   const collapsed = entry.done_collapsed ?? allDone;
 
   const block = document.createElement("div");
-  block.className = "workout-exercise" + (collapsed ? " workout-exercise--collapsed" : "");
+  block.className = "workout-exercise"
+    + (allDone ? " workout-exercise--done" : "")
+    + (collapsed ? " workout-exercise--collapsed" : "");
 
   const head = document.createElement("div");
   head.className = "workout-exercise-head";
@@ -2172,8 +2175,7 @@ function updateWorkoutStats() {
     }
   }
 
-  workoutVolumeEl.textContent =
-    `${Number.isInteger(volume) ? volume : volume.toFixed(1)} lbs`;
+  workoutVolumeEl.textContent = fmtStatVolume(volume);
   workoutSetsEl.textContent = String(doneCount);
 }
 
@@ -2273,6 +2275,14 @@ function stopDurationTimer() {
   if (durationTimer) clearInterval(durationTimer);
   durationTimer = null;
   startEmptyTimeEl.textContent = "";
+}
+
+// Volume for the workout stat tile: exact up to 5 digits, then abbreviated "k"
+// so it never outgrows its (narrow, 4-up) column. Unitless -- the label says it.
+function fmtStatVolume(v) {
+  const n = Math.round(v);
+  if (n < 10000) return String(n);
+  return (n % 1000 === 0 ? n / 1000 : (n / 1000).toFixed(1)) + "k";
 }
 
 function formatDuration(ms) {
@@ -2461,6 +2471,249 @@ restEditorSaveBtn.addEventListener("click", () => commitRestEditor(restEditorVal
 if (restEditorDefaultBtn) {
   restEditorDefaultBtn.addEventListener("click", () => commitRestEditor(null));
 }
+
+// --- Plate calculator -------------------------------------------------
+// A reference-only "what's on the bar" helper opened from the workout stats
+// row. Picks a piece of equipment (Barbell with an adjustable bar weight,
+// a zero-base plate-loaded machine, or the user's own custom equipment),
+// taps plate buttons, shows the running total. On a symmetric implement a
+// tapped plate loads BOTH sides. Custom equipment + bar weight live in
+// currentUser.preferences.plate_calc (no backend change: preferences is a
+// free-form JSON blob shallow-merged by PATCH /api/auth/me).
+const plateCalcBtn = document.getElementById("plate-calc-btn");
+const plateCalcEl = document.getElementById("plate-calc");
+const plateCalcCloseBtn = document.getElementById("plate-calc-close");
+const plateCalcEquipSel = document.getElementById("plate-calc-equipment");
+const plateCalcBarRow = document.getElementById("plate-calc-bar-row");
+const plateCalcBarValue = document.getElementById("plate-calc-bar-value");
+const plateCalcBarMinus = document.getElementById("plate-calc-bar-minus");
+const plateCalcBarPlus = document.getElementById("plate-calc-bar-plus");
+const plateCalcCustom = document.getElementById("plate-calc-custom");
+const plateCalcCustomName = document.getElementById("plate-calc-custom-name");
+const plateCalcCustomBase = document.getElementById("plate-calc-custom-base");
+const plateCalcCustomSym = document.getElementById("plate-calc-custom-symmetric");
+const plateCalcCustomCancel = document.getElementById("plate-calc-custom-cancel");
+const plateCalcCustomSave = document.getElementById("plate-calc-custom-save");
+const plateCalcTotalValue = document.getElementById("plate-calc-total-value");
+const plateCalcTotalSub = document.getElementById("plate-calc-total-sub");
+const plateCalcPlatesEl = document.getElementById("plate-calc-plates");
+const plateCalcLoadedEl = document.getElementById("plate-calc-loaded");
+const plateCalcResetBtn = document.getElementById("plate-calc-reset");
+const plateCalcEditBtn = document.getElementById("plate-calc-edit");
+const plateCalcDeleteBtn = document.getElementById("plate-calc-delete");
+
+const PC_PLATES = { lb: [45, 35, 25, 10, 5, 2.5, 1.25], kg: [25, 20, 15, 10, 5, 2.5, 1.25] };
+const PC_DEFAULT_BAR = { lb: 45, kg: 20 };
+const PC_BAR_STEP = { lb: 5, kg: 2.5 };
+const PC_BAR_MAX = { lb: 100, kg: 50 };
+const PC_LB_PER_KG = 2.2046226;
+const PC_BUILTINS = [
+  { id: "barbell", name: "Barbell", symmetric: true, builtin: true },
+  { id: "machine", name: "Plate-loaded machine", base: 0, symmetric: true, builtin: true },
+];
+
+let plateCalc = { equipmentId: "barbell", added: [] };  // added: one entry per plate, per side, in the current unit
+let plateCalcEditingId = null;
+
+const pcUnit = () => (measurementUnits() === "metric" ? "kg" : "lb");
+const pcPrefs = () => (currentUser?.preferences?.plate_calc) || {};
+const pcCustomList = () => (Array.isArray(pcPrefs().equipment) ? pcPrefs().equipment : []);
+const pcEquipmentList = () => PC_BUILTINS.concat(pcCustomList());
+const pcEquipment = () =>
+  pcEquipmentList().find((e) => e.id === plateCalc.equipmentId) || PC_BUILTINS[0];
+
+function pcBarWeight() {
+  const u = pcUnit();
+  const bw = pcPrefs().bar_weight;
+  return bw && Number.isFinite(bw[u]) ? bw[u] : PC_DEFAULT_BAR[u];
+}
+function pcBaseFor(eq) {
+  if (eq.id === "barbell") return pcBarWeight();
+  const base = Number(eq.base) || 0;
+  if (!eq.unit || eq.unit === pcUnit()) return base;
+  const conv = eq.unit === "kg" ? base * PC_LB_PER_KG : base / PC_LB_PER_KG;
+  return Math.round(conv * 2) / 2;
+}
+const pcSum = (arr) => arr.reduce((a, b) => a + b, 0);
+function pcTotal() {
+  const eq = pcEquipment();
+  return pcBaseFor(eq) + pcSum(plateCalc.added) * (eq.symmetric ? 2 : 1);
+}
+const fmtPlate = (n) => String(Math.round(n * 100) / 100);
+
+// Write the whole plate_calc object: optimistically into currentUser so the
+// open overlay re-renders from it at once, then persist (server echo replaces it).
+async function pcPersist(nextPlateCalc) {
+  if (currentUser) {
+    currentUser.preferences = { ...(currentUser.preferences || {}), plate_calc: nextPlateCalc };
+  }
+  try {
+    await savePreferences({ plate_calc: nextPlateCalc });
+  } catch (err) {
+    showToast(err.message || "Could not save.");
+  }
+}
+
+function openPlateCalc() {
+  const last = pcPrefs().last_equipment;
+  if (last && pcEquipmentList().some((e) => e.id === last)) {
+    plateCalc.equipmentId = last;
+  } else if (!pcEquipmentList().some((e) => e.id === plateCalc.equipmentId)) {
+    plateCalc.equipmentId = "barbell";
+  }
+  plateCalc.added = [];
+  plateCalcCustom.hidden = true;
+  renderPlateCalc();
+  openOverlay(plateCalcEl);
+}
+
+function renderPlateCalcEquipmentOptions() {
+  plateCalcEquipSel.replaceChildren();
+  for (const e of pcEquipmentList()) {
+    const opt = document.createElement("option");
+    opt.value = e.id;
+    opt.textContent = e.name;
+    plateCalcEquipSel.append(opt);
+  }
+  const add = document.createElement("option");
+  add.value = "__add__";
+  add.textContent = "+ Custom equipment…";
+  plateCalcEquipSel.append(add);
+  plateCalcEquipSel.value = plateCalc.equipmentId;
+}
+
+function renderPlateCalc() {
+  renderPlateCalcEquipmentOptions();
+  const eq = pcEquipment();
+  const unit = pcUnit();
+
+  plateCalcBarRow.hidden = eq.id !== "barbell";
+  plateCalcEditBtn.hidden = !!eq.builtin;
+  plateCalcDeleteBtn.hidden = !!eq.builtin;
+  plateCalcBarValue.textContent = `${fmtPlate(pcBarWeight())} ${unit}`;
+
+  plateCalcPlatesEl.replaceChildren();
+  for (const p of PC_PLATES[unit]) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "plate-calc-plate";
+    b.textContent = `+${fmtPlate(p)}`;
+    b.addEventListener("click", () => { plateCalc.added.push(p); renderPlateCalc(); });
+    plateCalcPlatesEl.append(b);
+  }
+
+  plateCalcLoadedEl.replaceChildren();
+  const groups = new Map();
+  for (const p of plateCalc.added) groups.set(p, (groups.get(p) || 0) + 1);
+  for (const [val, count] of [...groups.entries()].sort((a, b) => b[0] - a[0])) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "plate-calc-chip";
+    const n = `${fmtPlate(val)}${count > 1 ? ` ×${count}` : ""}`;
+    chip.textContent = eq.symmetric ? `${n} / side` : n;
+    chip.setAttribute("aria-label", `Remove one ${fmtPlate(val)} ${unit} plate`);
+    chip.addEventListener("click", () => {
+      const i = plateCalc.added.indexOf(val);
+      if (i >= 0) plateCalc.added.splice(i, 1);
+      renderPlateCalc();
+    });
+    plateCalcLoadedEl.append(chip);
+  }
+
+  const base = pcBaseFor(eq);
+  const perSide = pcSum(plateCalc.added);
+  plateCalcTotalValue.textContent = `${fmtPlate(pcTotal())} ${unit}`;
+  plateCalcTotalSub.textContent = eq.symmetric
+    ? `${fmtPlate(base)} base + ${fmtPlate(perSide)} / side`
+    : `${fmtPlate(base)} base + ${fmtPlate(perSide)} added`;
+}
+
+function pcStepBar(dir) {
+  const u = pcUnit();
+  const next = Math.min(PC_BAR_MAX[u], Math.max(0, pcBarWeight() + dir * PC_BAR_STEP[u]));
+  pcPersist({ ...pcPrefs(), bar_weight: { ...(pcPrefs().bar_weight || {}), [u]: next } });
+  renderPlateCalc();   // pcPersist has already updated currentUser.preferences synchronously
+}
+plateCalcBarMinus.addEventListener("click", () => pcStepBar(-1));
+plateCalcBarPlus.addEventListener("click", () => pcStepBar(1));
+
+plateCalcEquipSel.addEventListener("change", () => {
+  const v = plateCalcEquipSel.value;
+  if (v === "__add__") {
+    plateCalcEquipSel.value = plateCalc.equipmentId;   // revert; the add form takes over
+    openPcCustomEditor(null);
+    return;
+  }
+  plateCalc.equipmentId = v;
+  plateCalc.added = [];
+  plateCalcCustom.hidden = true;
+  pcPersist({ ...pcPrefs(), last_equipment: v });
+  renderPlateCalc();
+});
+
+function openPcCustomEditor(eq) {
+  plateCalcEditingId = eq ? eq.id : null;
+  plateCalcCustomName.value = eq ? eq.name : "";
+  plateCalcCustomBase.value = eq ? fmtPlate(Number(eq.base) || 0) : "";
+  plateCalcCustomSym.checked = eq ? eq.symmetric !== false : true;
+  plateCalcCustom.hidden = false;
+  plateCalcCustomName.focus();
+}
+plateCalcEditBtn.addEventListener("click", () => {
+  const eq = pcEquipment();
+  if (!eq.builtin) openPcCustomEditor(eq);
+});
+plateCalcCustomCancel.addEventListener("click", () => { plateCalcCustom.hidden = true; });
+plateCalcCustomSave.addEventListener("click", async () => {
+  const name = plateCalcCustomName.value.trim();
+  const base = parseFloat(plateCalcCustomBase.value);
+  if (!name) { plateCalcCustomName.focus(); return; }
+  if (!Number.isFinite(base) || base < 0) { plateCalcCustomBase.focus(); return; }
+  const sym = plateCalcCustomSym.checked;
+  const list = pcCustomList().slice();
+  let id = plateCalcEditingId;
+  if (id) {
+    const idx = list.findIndex((e) => e.id === id);
+    if (idx >= 0) list[idx] = { ...list[idx], name, base, unit: pcUnit(), symmetric: sym };
+  } else {
+    id = self.crypto && crypto.randomUUID
+      ? crypto.randomUUID()
+      : "eq_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    list.push({ id, name, base, unit: pcUnit(), symmetric: sym });
+  }
+  plateCalc.equipmentId = id;
+  plateCalc.added = [];
+  plateCalcCustom.hidden = true;
+  await pcPersist({ ...pcPrefs(), equipment: list, last_equipment: id });
+  renderPlateCalc();
+});
+plateCalcDeleteBtn.addEventListener("click", async () => {
+  const eq = pcEquipment();
+  if (eq.builtin) return;
+  const ok = await appConfirm({
+    title: "Delete equipment?",
+    body: `Remove "${eq.name}" from the plate calculator.`,
+    confirmLabel: "Delete",
+    danger: true,
+  });
+  if (!ok) return;
+  const list = pcCustomList().filter((e) => e.id !== eq.id);
+  plateCalc.equipmentId = "barbell";
+  plateCalc.added = [];
+  await pcPersist({ ...pcPrefs(), equipment: list, last_equipment: "barbell" });
+  renderPlateCalc();
+});
+
+plateCalcResetBtn.addEventListener("click", () => { plateCalc.added = []; renderPlateCalc(); });
+
+plateCalcBtn.addEventListener("click", openPlateCalc);
+plateCalcCloseBtn.addEventListener("click", () => closeOverlay(plateCalcEl));
+plateCalcEl.addEventListener("click", (e) => {
+  if (e.target === plateCalcEl) closeOverlay(plateCalcEl);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !plateCalcEl.hidden) closeOverlay(plateCalcEl);
+});
 
 // --- Rest-timer push notifications -------------------------------------
 // While a rest countdown runs we register a one-shot server-side reminder; the

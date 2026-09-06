@@ -954,17 +954,23 @@ form > .panel:first-child { margin-top: 0; }
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 .workout-head .ghost { margin-top: 0; flex-shrink: 0; }
 
 .workout-stats {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
 }
-.stat { display: flex; flex-direction: column; gap: 2px; }
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  text-align: center;
+}
 .stat-label {
   font-size: 11px;
   font-weight: 600;
@@ -972,16 +978,34 @@ form > .panel:first-child { margin-top: 0; }
   letter-spacing: 0.04em;
   color: var(--muted);
 }
-.stat-value { font-size: 17px; font-weight: 700; }
+.stat-value { font-size: 17px; font-weight: 700; white-space: nowrap; }
 .stat-value--time { color: var(--accent); }
-
-.workout-exercises { display: flex; flex-direction: column; }
-
-.workout-exercise {
-  border-top: 1px solid var(--border);
-  padding: 14px 0;
+/* The plate-calculator opener, sat in the stats row. */
+.stat--action {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
 }
-.workout-exercise:first-child { border-top: 0; padding-top: 0; }
+.stat--action .stat-value {
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 21px;   /* line up with the numeric stat values beside it */
+}
+
+.workout-exercises { display: flex; flex-direction: column; gap: 12px; }
+
+/* Each exercise is its own shaded card; controls inside lift one shade (the
+   same token trick .panel uses) so they read against the card. */
+.workout-exercise {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.workout-exercise > * { --surface-2: var(--surface-3); }
 .workout-exercise-head {
   display: flex;
   align-items: center;
@@ -1006,7 +1030,9 @@ form > .panel:first-child { margin-top: 0; }
 /* An exercise whose sets are all checked -- tap the header row to fold it. */
 .workout-exercise-head--tappable,
 .workout-exercise--collapsed .workout-exercise-head { cursor: pointer; }
-.workout-exercise--collapsed .workout-exercise-name { color: var(--text); }
+/* A finished exercise: title dims to muted grey and stays that way even when
+   the block is re-expanded -- only unchecking a set brings the accent back. */
+.workout-exercise--done .workout-exercise-name { color: var(--muted); }
 .workout-exercise-summary {
   flex: 1;
   font-size: 12px;
@@ -1142,9 +1168,10 @@ form > .panel:first-child { margin-top: 0; }
 
 .workout-add-set { margin-top: 10px; width: 100%; }
 
-/* "+ Add Exercise" -- dark, secondary. Finish is the one blue button. */
+/* "+ Add Exercise" -- dark, secondary. Finish is the one blue button.
+   The big top margin sets it apart from the last exercise card above. */
 #workout-add-exercise,
-#routine-add-exercise { margin: 6px 0 4px; }
+#routine-add-exercise { margin: 24px 0 4px; }
 
 .workout-actions {
   display: grid;
@@ -1302,6 +1329,162 @@ form > .panel:first-child { margin-top: 0; }
 .rest-editor-step:hover:not(:disabled) { border-color: var(--accent); }
 .rest-editor-step:disabled { opacity: 0.4; cursor: default; }
 .rest-editor-box .ghost { margin-top: 0; }
+
+/* --- Plate calculator (opened from the workout stats row) --- */
+.plate-calc {
+  position: fixed;
+  inset: 0;
+  z-index: 1250;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.6);
+}
+.plate-calc-box {
+  width: 100%;
+  max-width: 340px;
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.plate-calc-box > * { --surface-2: var(--surface-3); }
+.plate-calc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.plate-calc-head .rest-editor-title { margin: 0; }
+.plate-calc-x {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.plate-calc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.plate-calc-stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.plate-calc-stepper button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.plate-calc-stepper button:hover { border-color: var(--accent); }
+#plate-calc-bar-value {
+  min-width: 68px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.plate-calc-base-input { max-width: 110px; text-align: right; }
+.plate-calc-custom {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);   /* so its --surface-3 inputs still read as raised */
+}
+.plate-calc-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.plate-calc-check input { width: 18px; height: 18px; accent-color: var(--accent); }
+.plate-calc-custom-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.plate-calc-custom-actions .ghost { margin-top: 0; }
+.plate-calc-total {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 0;
+}
+.plate-calc-total-value {
+  font-size: 34px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.plate-calc-total-sub { font-size: 12px; color: var(--muted); }
+.plate-calc-plates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+.plate-calc-plate {
+  min-width: 52px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.plate-calc-plate:hover { border-color: var(--accent); }
+.plate-calc-loaded {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+.plate-calc-loaded:empty { display: none; }
+.plate-calc-chip {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.plate-calc-chip:hover { border-color: var(--error); color: var(--error); }
+.plate-calc-actions {
+  display: flex;
+  gap: 10px;
+}
+.plate-calc-actions .ghost { margin-top: 0; flex: 1; }
+.plate-calc-delete:hover { border-color: var(--error); color: var(--error); }
 
 /* Right-side menu panel, opened from the home screen's ☰ button.
    Same dim-layer pattern as .rest-editor, but anchored to the right edge. */
@@ -1912,6 +2095,9 @@ button.calendar-day { margin: 0; appearance: none; cursor: pointer; }
   color: var(--muted);
   text-align: right;
 }
+/* Idle (saved) -> no text: don't reserve the row, it just adds dead space
+   between the stats header and the first exercise. */
+.workout-save-state:empty { min-height: 0; margin: 0; }
 .workout-save-state[data-state="offline"],
 .workout-save-state[data-state="pending"] { color: var(--error); }
 .workout-save-state[data-state="saving"] { color: var(--muted); }
@@ -1964,10 +2150,12 @@ button.calendar-day { margin: 0; appearance: none; cursor: pointer; }
 .rest-editor.overlay-in .rest-editor-box,
 .day-picker.overlay-in .day-picker-box,
 .modal.overlay-in .modal-box,
+.plate-calc.overlay-in .plate-calc-box,
 .measurement-photo-viewer.overlay-in img { animation: sheetIn 190ms ease-out; }
 .rest-editor.overlay-out .rest-editor-box,
 .day-picker.overlay-out .day-picker-box,
 .modal.overlay-out .modal-box,
+.plate-calc.overlay-out .plate-calc-box,
 .measurement-photo-viewer.overlay-out img { animation: sheetOut 150ms ease-in both; }
 
 .side-menu.overlay-in .side-menu-panel  { animation: panelIn 200ms ease-out; }
@@ -1980,6 +2168,7 @@ button.calendar-day { margin: 0; appearance: none; cursor: pointer; }
 .history-row-main, .history-row-repeat, .exercise-pick, .side-menu-item,
 .day-picker-item, .measurement-chip, .rest-adjust, .rest-skip,
 .rest-editor-step, .toast-action, .modal-actions .ghost, .modal-actions .submit,
+.stat--action, .plate-calc-plate, .plate-calc-chip, .plate-calc-stepper button,
 .set-remove, button.calendar-day {
   transition: transform 90ms ease, background-color 120ms ease,
               border-color 120ms ease, color 120ms ease, opacity 120ms ease;
@@ -1992,6 +2181,8 @@ button.calendar-day { margin: 0; appearance: none; cursor: pointer; }
 .side-menu-item:active, .day-picker-item:active, .measurement-chip:active,
 .rest-adjust:active, .rest-skip:active,
 .rest-editor-step:not(:disabled):active,
+.stat--action:active, .plate-calc-plate:active, .plate-calc-chip:active,
+.plate-calc-stepper button:active,
 .toast-action:active, .modal-actions button:active, button.calendar-day:active {
   transform: scale(0.96);
 }

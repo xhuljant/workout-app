@@ -15,7 +15,7 @@
   <title>Workout Log</title>
   <!-- Apply a saved Light/Dark choice before first paint, so there's no flash. -->
   <script>try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
-  <link rel="stylesheet" href="/style.css?v=52" />
+  <link rel="stylesheet" href="/style.css?v=57" />
 </head>
 <body>
   <main class="card">
@@ -215,12 +215,28 @@
           </div>
           <div class="stat">
             <span class="stat-label">Volume</span>
-            <span id="workout-volume" class="stat-value">0 lbs</span>
+            <span id="workout-volume" class="stat-value">0</span>
           </div>
           <div class="stat">
             <span class="stat-label">Sets</span>
             <span id="workout-sets" class="stat-value">0</span>
           </div>
+          <button id="plate-calc-btn" class="stat stat--action" type="button"
+                  aria-label="Plate calculator" title="Plate calculator">
+            <span class="stat-label">Plates</span>
+            <span class="stat-value" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" role="img" aria-hidden="true">
+                <rect x="5" y="2.5" width="14" height="19" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+                <rect x="8" y="5.5" width="8" height="3" rx="0.6"/>
+                <circle cx="9" cy="12.5" r="1.15"/>
+                <circle cx="12" cy="12.5" r="1.15"/>
+                <circle cx="15" cy="12.5" r="1.15"/>
+                <circle cx="9" cy="16.5" r="1.15"/>
+                <circle cx="12" cy="16.5" r="1.15"/>
+                <circle cx="15" cy="16.5" r="1.15"/>
+              </svg>
+            </span>
+          </button>
         </div>
       </div>
 
@@ -228,12 +244,10 @@
            of every edit is kept in this browser until the server confirms it. -->
       <p id="workout-save-state" class="workout-save-state" aria-live="polite"></p>
 
-      <div class="panel">
-        <div id="workout-exercises" class="workout-exercises"></div>
-        <p id="workout-empty" class="routine-empty" hidden>
-          No exercises yet. Add one to start logging sets.
-        </p>
-      </div>
+      <div id="workout-exercises" class="workout-exercises"></div>
+      <p id="workout-empty" class="routine-empty" hidden>
+        No exercises yet. Add one to start logging sets.
+      </p>
 
       <button id="workout-add-exercise" class="btn-dark" type="button">+ Add Exercise</button>
 
@@ -265,12 +279,10 @@
         </div>
       </div>
 
-      <div class="panel">
-        <div id="routine-exercises" class="workout-exercises"></div>
-        <p id="routine-empty-msg" class="routine-empty" hidden>
-          No exercises yet. Add one to build the routine.
-        </p>
-      </div>
+      <div id="routine-exercises" class="workout-exercises"></div>
+      <p id="routine-empty-msg" class="routine-empty" hidden>
+        No exercises yet. Add one to build the routine.
+      </p>
 
       <button id="routine-add-exercise" class="btn-dark" type="button">+ Add Exercise</button>
 
@@ -373,9 +385,7 @@
         <h2 id="history-detail-title" class="subview-title">Workout</h2>
       </div>
       <p id="history-detail-meta" class="exercise-status"></p>
-      <div class="panel">
-        <div id="history-detail-exercises" class="workout-exercises"></div>
-      </div>
+      <div id="history-detail-exercises" class="workout-exercises"></div>
       <button id="history-detail-share" class="ghost settings-section" type="button">Share</button>
       <button id="history-detail-delete" class="btn-danger settings-section" type="button">Delete this workout</button>
     </section>
@@ -673,6 +683,60 @@
     </div>
   </div>
 
+  <!-- Plate calculator: "what's on the bar" helper, opened from the workout stats row. -->
+  <div id="plate-calc" class="plate-calc" hidden>
+    <div class="plate-calc-box">
+      <div class="plate-calc-head">
+        <h3 class="rest-editor-title">Plate calculator</h3>
+        <button id="plate-calc-close" class="plate-calc-x" type="button" aria-label="Close">&#10005;</button>
+      </div>
+
+      <select id="plate-calc-equipment" class="modal-input" aria-label="Equipment"></select>
+
+      <div id="plate-calc-bar-row" class="plate-calc-row">
+        <span>Bar weight</span>
+        <div class="plate-calc-stepper">
+          <button id="plate-calc-bar-minus" type="button" aria-label="Lighter bar">&minus;</button>
+          <span id="plate-calc-bar-value">45</span>
+          <button id="plate-calc-bar-plus" type="button" aria-label="Heavier bar">+</button>
+        </div>
+      </div>
+
+      <!-- Custom-equipment editor: revealed by "+ Custom equipment…" or Edit. -->
+      <div id="plate-calc-custom" class="plate-calc-custom" hidden>
+        <input id="plate-calc-custom-name" class="modal-input" type="text"
+               placeholder="Equipment name" autocomplete="off" />
+        <div class="plate-calc-row">
+          <span>Base weight</span>
+          <input id="plate-calc-custom-base" class="modal-input plate-calc-base-input"
+                 type="text" inputmode="decimal" autocomplete="off" />
+        </div>
+        <label class="plate-calc-check">
+          <input id="plate-calc-custom-symmetric" type="checkbox" checked />
+          <span>Adding a plate loads both sides</span>
+        </label>
+        <div class="plate-calc-custom-actions">
+          <button id="plate-calc-custom-cancel" class="ghost" type="button">Cancel</button>
+          <button id="plate-calc-custom-save" class="submit" type="button">Save</button>
+        </div>
+      </div>
+
+      <div class="plate-calc-total">
+        <span id="plate-calc-total-value" class="plate-calc-total-value">45 lb</span>
+        <span id="plate-calc-total-sub" class="plate-calc-total-sub"></span>
+      </div>
+
+      <div id="plate-calc-plates" class="plate-calc-plates"></div>
+      <div id="plate-calc-loaded" class="plate-calc-loaded"></div>
+
+      <div class="plate-calc-actions">
+        <button id="plate-calc-reset" class="ghost" type="button">Reset</button>
+        <button id="plate-calc-edit" class="ghost" type="button" hidden>Edit</button>
+        <button id="plate-calc-delete" class="ghost plate-calc-delete" type="button" hidden>Delete</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Right-side menu, opened by the home screen's ☰ button. -->
   <div id="side-menu" class="side-menu" hidden>
     <nav class="side-menu-panel" aria-label="Menu">
@@ -759,6 +823,6 @@
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=56"></script>
+  <script src="/app.js?v=59"></script>
 </body>
 </html>
