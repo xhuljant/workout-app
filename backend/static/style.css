@@ -9,6 +9,7 @@
   --bg: #0b0b0d;          /* near-black page background */
   --surface: #151519;     /* the card */
   --surface-2: #1e1e24;   /* inputs and the tab track */
+  --surface-3: #26262e;   /* a control raised on a shaded .panel */
   --border: #2a2a32;
   --text: #f4f4f6;
   --muted: #9a9aa6;
@@ -30,6 +31,7 @@
   --bg: #f5f6f8;
   --surface: #ffffff;
   --surface-2: #eef0f4;
+  --surface-3: #e4e7ec;
   --border: #d7dae1;
   --text: #16161a;
   --muted: #666674;
@@ -48,6 +50,7 @@
     --bg: #f5f6f8;
     --surface: #ffffff;
     --surface-2: #eef0f4;
+    --surface-3: #e4e7ec;
     --border: #d7dae1;
     --text: #16161a;
     --muted: #666674;
@@ -131,8 +134,16 @@ body {
     flex: 1 1 auto;
     min-height: 0;
   }
+  /* Let the shaded panel fill the screen and the list scroll inside it. */
+  #exercises-view .panel {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
   #exercise-list {
     flex: 1 1 auto;
+    min-height: 0;
     max-height: none;
   }
 }
@@ -144,7 +155,7 @@ body {
   gap: 10px;
   margin-bottom: 22px;
 }
-.brand-mark { color: var(--accent); font-size: 22px; line-height: 1; }
+.brand-mark { color: var(--accent); display: inline-flex; align-items: center; }
 .brand-name { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: 0.02em; }
 
 /* Hamburger button in the wordmark header -- opens the right-side menu.
@@ -439,6 +450,28 @@ button.settings-section { width: 100%; }
   gap: 2px;
 }
 
+/* Shaded panel: groups a run of related controls and sets them apart from the
+   plain page/card background. Used on the home screen and across the subviews. */
+.panel {
+  margin-top: 16px;
+  padding: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.panel > :first-child { margin-top: 0; }
+.panel > :last-child { margin-bottom: 0; }
+/* No extra gap when a panel is the first thing under a screen header / form. */
+.subview-head + .panel,
+form > .panel:first-child { margin-top: 0; }
+
+/* Anything inside a panel that paints itself with --surface-2 lifts one step to
+   the raised shade, so buttons / inputs / rows don't merge into the panel. The
+   token is only ever used as a background (verified), so redefining it on the
+   panel's subtree is enough -- no per-component list to maintain. */
+.panel > * { --surface-2: var(--surface-3); }
+.panel .ghost { background: var(--surface-3); }   /* .ghost is transparent, not --surface-2 */
+
 /* "Routines" heading row with the + Folder / Edit buttons */
 .routines-head {
   display: flex;
@@ -601,8 +634,7 @@ button.settings-section { width: 100%; }
 }
 .history-row-repeat:hover { border-color: var(--accent); }
 
-/* Recent-workouts block on the home screen */
-.home-history { margin-top: 22px; }
+/* Recent-workouts block on the home screen (spacing comes from .panel) */
 .home-history-title {
   margin: 0 0 10px;
   font-size: 12px;
@@ -725,9 +757,18 @@ button.settings-section { width: 100%; }
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 46vh;
+  max-height: 40vh;
   overflow-y: auto;
   margin-bottom: 16px;
+  /* Show only the thumb -- no shaded full-length track. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.exercise-list::-webkit-scrollbar { width: 8px; }
+.exercise-list::-webkit-scrollbar-track { background: transparent; }
+.exercise-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
 }
 
 .exercise {
@@ -1389,8 +1430,7 @@ button.calendar-day { margin: 0; appearance: none; cursor: pointer; }
   text-overflow: ellipsis;
 }
 
-/* Home-screen compact month (below "Recent workouts") */
-.home-calendar { margin-top: 18px; }
+/* Home-screen compact month (below "Recent workouts"); spacing comes from .panel */
 .home-calendar .calendar-day {
   height: 40px;
   align-items: center;
@@ -1661,19 +1701,38 @@ button.calendar-day { margin: 0; appearance: none; cursor: pointer; }
   max-height: 100%;
   border-radius: 8px;
 }
-/* Invisible left/right paging zones + the "n / m" counter. */
-.photo-viewer-zone {
+/* Edge-centered prev/next buttons, the top-right close button, and the
+   "n / m" counter. */
+.photo-viewer-zone,
+.photo-viewer-close {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 40%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 0;
-  background: transparent;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  line-height: 1;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.photo-viewer-zone--prev { left: 0; }
-.photo-viewer-zone--next { right: 0; }
+.photo-viewer-zone {
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  font-size: 26px;
+}
+.photo-viewer-zone--prev { left: 12px; }
+.photo-viewer-zone--next { right: 12px; }
+.photo-viewer-close {
+  top: calc(12px + env(safe-area-inset-top));
+  right: 12px;
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+}
 .photo-viewer-count {
   position: absolute;
   left: 50%;

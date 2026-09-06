@@ -15,13 +15,21 @@
   <title>Workout Log</title>
   <!-- Apply a saved Light/Dark choice before first paint, so there's no flash. -->
   <script>try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
-  <link rel="stylesheet" href="/style.css?v=49" />
+  <link rel="stylesheet" href="/style.css?v=52" />
 </head>
 <body>
   <main class="card">
     <!-- Wordmark -->
     <header class="brand">
-      <span class="brand-mark" aria-hidden="true">&#9626;</span>
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="22" height="22" fill="currentColor" role="img" aria-hidden="true">
+          <rect x="3.2" y="11.6" width="2.8" height="8.8" rx="0.8"/>
+          <rect x="26.0" y="11.6" width="2.8" height="8.8" rx="0.8"/>
+          <rect x="6.3" y="8.25" width="3.4" height="15.5" rx="1"/>
+          <rect x="22.3" y="8.25" width="3.4" height="15.5" rx="1"/>
+          <rect x="9.5" y="14.2" width="13" height="3.6" rx="1.8"/>
+        </svg>
+      </span>
       <h1 class="brand-name">Workout Log</h1>
       <button id="menu-btn" class="brand-menu" type="button"
               aria-label="Menu" aria-haspopup="true" aria-expanded="false" hidden>
@@ -73,34 +81,39 @@
         <button id="exercises" class="action" type="button">Exercises</button>
       </div>
 
-      <div class="routines-head">
-        <h3 class="home-history-title">Routines</h3>
-        <div class="routines-head-actions">
-          <button id="import-routine-btn" class="ghost" type="button" hidden>Import</button>
-          <input id="import-routine-file" type="file" accept="application/json,.json" hidden />
-          <button id="new-folder-btn" class="ghost" type="button" hidden>+ Folder</button>
-          <button id="edit-routines-btn" class="ghost" type="button">Edit</button>
+      <!-- Routines block: its own shaded panel, set apart from the log below. -->
+      <div class="panel">
+        <div class="routines-head">
+          <h3 class="home-history-title">Routines</h3>
+          <div class="routines-head-actions">
+            <button id="import-routine-btn" class="ghost" type="button" hidden>Import</button>
+            <input id="import-routine-file" type="file" accept="application/json,.json" hidden />
+            <button id="new-folder-btn" class="ghost" type="button" hidden>+ Folder</button>
+            <button id="edit-routines-btn" class="ghost" type="button">Edit</button>
+          </div>
         </div>
+
+        <!-- Folder sections, each with its routine rows -- filled in by app.js. -->
+        <div id="routine-list" class="routine-list"></div>
+
+        <!-- Shown when the user has no routines at all. -->
+        <p id="routine-empty" class="routine-empty" hidden>
+          No routines yet. Create one with New routine.
+        </p>
       </div>
 
-      <!-- Folder sections, each with its routine rows -- filled in by app.js. -->
-      <div id="routine-list" class="routine-list"></div>
-
-      <!-- Shown when the user has no routines at all. -->
-      <p id="routine-empty" class="routine-empty" hidden>
-        No routines yet. Create one with New routine.
-      </p>
-
-      <!-- The 3 most recent finished workouts, always at the bottom. -->
-      <section id="home-history" class="home-history" hidden>
+      <!-- The 3 most recent finished workouts. Its own panel; app.js un-hides it
+           only when there is history. -->
+      <section id="home-history" class="home-history panel" hidden>
         <h3 class="home-history-title">Recent workouts</h3>
         <div id="home-history-list" class="routine-list"></div>
         <button id="home-history-more" class="ghost" type="button">Load more history &rarr;</button>
       </section>
 
-      <!-- Compact grid of the current month; days with a finished workout are marked. -->
-      <section id="home-calendar" class="home-calendar" hidden>
-        <h3 class="home-history-title">This month</h3>
+      <!-- Compact grid of the current month; days with a finished workout are
+           marked. Its own panel, separate from Recent workouts. -->
+      <section id="home-calendar" class="home-calendar panel" hidden>
+        <h3 id="home-calendar-title" class="home-history-title">This month</h3>
         <div id="home-calendar-grid"></div>
       </section>
     </section>
@@ -113,20 +126,22 @@
         <button id="exercise-add-btn" class="ghost" type="button">Add</button>
       </div>
 
-      <input id="exercise-search" class="search" type="search"
-             placeholder="Search exercises" autocomplete="off" />
+      <div class="panel">
+        <input id="exercise-search" class="search" type="search"
+               placeholder="Search exercises" autocomplete="off" />
 
-      <div class="exercise-filters">
-        <select id="filter-equipment" aria-label="Filter by equipment">
-          <option value="">All equipment</option>
-        </select>
-        <select id="filter-muscle" aria-label="Filter by body part">
-          <option value="">All body parts</option>
-        </select>
+        <div class="exercise-filters">
+          <select id="filter-equipment" aria-label="Filter by equipment">
+            <option value="">All equipment</option>
+          </select>
+          <select id="filter-muscle" aria-label="Filter by body part">
+            <option value="">All body parts</option>
+          </select>
+        </div>
+
+        <p id="exercise-status" class="exercise-status" aria-live="polite"></p>
+        <div id="exercise-list" class="exercise-list"></div>
       </div>
-
-      <p id="exercise-status" class="exercise-status" aria-live="polite"></p>
-      <div id="exercise-list" class="exercise-list"></div>
 
       <!-- Only shown while picking exercises for a workout / routine. -->
       <div id="exercise-pick-bar" class="exercise-pick-bar" hidden>
@@ -144,44 +159,46 @@
         <h2 id="exercise-create-title" class="subview-title">New exercise</h2>
       </div>
       <form id="add-exercise-form" novalidate>
-        <div class="field">
-          <label for="ex-name">Name</label>
-          <input id="ex-name" name="name" type="text" required />
+        <div class="panel">
+          <div class="field">
+            <label for="ex-name">Name</label>
+            <input id="ex-name" name="name" type="text" required />
+          </div>
+          <div class="field">
+            <label for="ex-tracking">Tracking</label>
+            <select id="ex-tracking">
+              <option value="weight_reps">Weight &amp; reps</option>
+              <option value="reps">Reps only</option>
+              <option value="time">Time</option>
+              <option value="distance_time">Distance &amp; time</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="ex-category">Category <span class="opt">optional</span></label>
+            <input id="ex-category" name="category" type="text" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="ex-equipment">Equipment <span class="opt">optional</span></label>
+            <input id="ex-equipment" name="equipment" type="text" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="ex-muscles">Primary muscles <span class="opt">optional, comma-separated</span></label>
+            <input id="ex-muscles" name="primary_muscles" type="text" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="ex-secondary-muscles">Secondary muscles <span class="opt">optional, comma-separated</span></label>
+            <input id="ex-secondary-muscles" name="secondary_muscles" type="text" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="ex-instructions">Instructions <span class="opt">optional, one step per line</span></label>
+            <textarea id="ex-instructions" name="instructions" rows="3"></textarea>
+          </div>
+          <div class="field">
+            <label for="ex-images">Example photos <span class="opt">optional, up to 2 (e.g. start &amp; end position)</span></label>
+            <input id="ex-images" type="file" accept="image/*" multiple />
+          </div>
+          <div id="ex-images-list" class="measurement-photos"></div>
         </div>
-        <div class="field">
-          <label for="ex-tracking">Tracking</label>
-          <select id="ex-tracking">
-            <option value="weight_reps">Weight &amp; reps</option>
-            <option value="reps">Reps only</option>
-            <option value="time">Time</option>
-            <option value="distance_time">Distance &amp; time</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="ex-category">Category <span class="opt">optional</span></label>
-          <input id="ex-category" name="category" type="text" autocomplete="off" />
-        </div>
-        <div class="field">
-          <label for="ex-equipment">Equipment <span class="opt">optional</span></label>
-          <input id="ex-equipment" name="equipment" type="text" autocomplete="off" />
-        </div>
-        <div class="field">
-          <label for="ex-muscles">Primary muscles <span class="opt">optional, comma-separated</span></label>
-          <input id="ex-muscles" name="primary_muscles" type="text" autocomplete="off" />
-        </div>
-        <div class="field">
-          <label for="ex-secondary-muscles">Secondary muscles <span class="opt">optional, comma-separated</span></label>
-          <input id="ex-secondary-muscles" name="secondary_muscles" type="text" autocomplete="off" />
-        </div>
-        <div class="field">
-          <label for="ex-instructions">Instructions <span class="opt">optional, one step per line</span></label>
-          <textarea id="ex-instructions" name="instructions" rows="3"></textarea>
-        </div>
-        <div class="field">
-          <label for="ex-images">Example photos <span class="opt">optional, up to 2 (e.g. start &amp; end position)</span></label>
-          <input id="ex-images" type="file" accept="image/*" multiple />
-        </div>
-        <div id="ex-images-list" class="measurement-photos"></div>
         <p id="add-exercise-message" class="message" role="alert" aria-live="polite"></p>
         <button id="add-exercise-submit" class="submit" type="submit">Save exercise</button>
       </form>
@@ -211,10 +228,12 @@
            of every edit is kept in this browser until the server confirms it. -->
       <p id="workout-save-state" class="workout-save-state" aria-live="polite"></p>
 
-      <div id="workout-exercises" class="workout-exercises"></div>
-      <p id="workout-empty" class="routine-empty" hidden>
-        No exercises yet. Add one to start logging sets.
-      </p>
+      <div class="panel">
+        <div id="workout-exercises" class="workout-exercises"></div>
+        <p id="workout-empty" class="routine-empty" hidden>
+          No exercises yet. Add one to start logging sets.
+        </p>
+      </div>
 
       <button id="workout-add-exercise" class="btn-dark" type="button">+ Add Exercise</button>
 
@@ -231,23 +250,27 @@
         <h2 id="routine-title" class="subview-title">New routine</h2>
       </div>
 
-      <div class="field">
-        <label for="routine-name">Routine name</label>
-        <input id="routine-name" type="text" autocomplete="off" />
-      </div>
-      <div class="field">
-        <label for="routine-folder">Folder</label>
-        <select id="routine-folder"></select>
-      </div>
-      <div class="field">
-        <label for="routine-rest">Rest timer <span class="opt">seconds, blank = use default</span></label>
-        <input id="routine-rest" type="number" inputmode="numeric" min="0" max="3600" step="5" />
+      <div class="panel">
+        <div class="field">
+          <label for="routine-name">Routine name</label>
+          <input id="routine-name" type="text" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="routine-folder">Folder</label>
+          <select id="routine-folder"></select>
+        </div>
+        <div class="field">
+          <label for="routine-rest">Rest timer <span class="opt">seconds, blank = use default</span></label>
+          <input id="routine-rest" type="number" inputmode="numeric" min="0" max="3600" step="5" />
+        </div>
       </div>
 
-      <div id="routine-exercises" class="workout-exercises"></div>
-      <p id="routine-empty-msg" class="routine-empty" hidden>
-        No exercises yet. Add one to build the routine.
-      </p>
+      <div class="panel">
+        <div id="routine-exercises" class="workout-exercises"></div>
+        <p id="routine-empty-msg" class="routine-empty" hidden>
+          No exercises yet. Add one to build the routine.
+        </p>
+      </div>
 
       <button id="routine-add-exercise" class="btn-dark" type="button">+ Add Exercise</button>
 
@@ -296,17 +319,19 @@
       </div>
 
       <!-- Exercises mode: pick a lift you've logged to see its progress. -->
-      <div id="progress-exercises" hidden>
+      <div id="progress-exercises" class="panel" hidden>
         <input id="progress-exercise-search" class="progress-exercise-search" type="text"
                placeholder="Search your exercises…" autocomplete="off" />
         <div id="progress-exercise-list" class="progress-exercise-list"></div>
       </div>
 
       <!-- Measurements mode -->
-      <div id="measurements-chart" class="measurements-chart"></div>
-      <div id="measurements-filter" class="measurements-filter"></div>
-      <p id="measurements-status" class="exercise-status" aria-live="polite"></p>
-      <div id="measurements-list" class="routine-list"></div>
+      <div id="measurements-list-panel" class="panel" hidden>
+        <div id="measurements-chart" class="measurements-chart"></div>
+        <div id="measurements-filter" class="measurements-filter"></div>
+        <p id="measurements-status" class="exercise-status" aria-live="polite"></p>
+        <div id="measurements-list" class="routine-list"></div>
+      </div>
 
       <!-- Photos mode: scrollable, date-ordered progress-photo timeline. -->
       <div id="measurements-photos" class="photo-timeline" hidden></div>
@@ -323,16 +348,18 @@
         <button id="measurement-editor-edit-btn" class="ghost" type="button" hidden>Edit</button>
       </div>
       <form id="measurement-form" novalidate>
-        <div class="field">
-          <label for="measurement-date">Date</label>
-          <input id="measurement-date" type="date" />
+        <div class="panel">
+          <div class="field">
+            <label for="measurement-date">Date</label>
+            <input id="measurement-date" type="date" />
+          </div>
+          <div id="measurement-fields" class="measurement-fields"></div>
+          <div class="field">
+            <label for="measurement-photo">Progress photos <span class="opt">up to 4</span></label>
+            <input id="measurement-photo" type="file" accept="image/*" multiple />
+          </div>
+          <div id="measurement-photos" class="measurement-photos"></div>
         </div>
-        <div id="measurement-fields" class="measurement-fields"></div>
-        <div class="field">
-          <label for="measurement-photo">Progress photos <span class="opt">up to 4</span></label>
-          <input id="measurement-photo" type="file" accept="image/*" multiple />
-        </div>
-        <div id="measurement-photos" class="measurement-photos"></div>
         <p id="measurement-msg" class="message" role="alert" aria-live="polite"></p>
         <button id="measurement-save" class="submit" type="submit">Save</button>
         <button id="measurement-delete" class="ghost measurement-delete" type="button" hidden>Delete entry</button>
@@ -346,7 +373,9 @@
         <h2 id="history-detail-title" class="subview-title">Workout</h2>
       </div>
       <p id="history-detail-meta" class="exercise-status"></p>
-      <div id="history-detail-exercises" class="workout-exercises"></div>
+      <div class="panel">
+        <div id="history-detail-exercises" class="workout-exercises"></div>
+      </div>
       <button id="history-detail-share" class="ghost settings-section" type="button">Share</button>
       <button id="history-detail-delete" class="btn-danger settings-section" type="button">Delete this workout</button>
     </section>
@@ -419,13 +448,15 @@
         <h2 class="subview-title">Profile</h2>
       </div>
       <form id="settings-profile-form" novalidate>
-        <div class="field">
-          <label for="set-name">Display name</label>
-          <input id="set-name" type="text" autocomplete="name" />
-        </div>
-        <div class="field">
-          <label for="set-email">Email</label>
-          <input id="set-email" type="email" autocomplete="email" />
+        <div class="panel">
+          <div class="field">
+            <label for="set-name">Display name</label>
+            <input id="set-name" type="text" autocomplete="name" />
+          </div>
+          <div class="field">
+            <label for="set-email">Email</label>
+            <input id="set-email" type="email" autocomplete="email" />
+          </div>
         </div>
         <p id="settings-profile-msg" class="message" role="alert" aria-live="polite"></p>
         <button id="settings-profile-save" class="submit" type="submit">Save</button>
@@ -438,12 +469,14 @@
         <button class="ghost settings-sub-back" type="button" aria-label="Back to settings">&larr;</button>
         <h2 class="subview-title">Account</h2>
       </div>
-      <button id="settings-change-password-btn" class="btn-dark settings-section" type="button">
-        Change password
-      </button>
-      <button id="settings-delete-account-btn" class="btn-danger settings-section" type="button">
-        Delete account
-      </button>
+      <div class="panel">
+        <button id="settings-change-password-btn" class="btn-dark settings-section" type="button">
+          Change password
+        </button>
+        <button id="settings-delete-account-btn" class="btn-danger settings-section" type="button">
+          Delete account
+        </button>
+      </div>
     </section>
 
     <!-- Settings > Notifications -->
@@ -452,12 +485,14 @@
         <button class="ghost settings-sub-back" type="button" aria-label="Back to settings">&larr;</button>
         <h2 class="subview-title">Notifications</h2>
       </div>
-      <div class="field field--check">
-        <label for="set-notify">Rest timer notifications</label>
-        <label class="check-control">
-          <input id="set-notify" type="checkbox" />
-          <span>Alert with sound when a rest ends, even in the background</span>
-        </label>
+      <div class="panel">
+        <div class="field field--check">
+          <label for="set-notify">Rest timer notifications</label>
+          <label class="check-control">
+            <input id="set-notify" type="checkbox" />
+            <span>Alert with sound when a rest ends, even in the background</span>
+          </label>
+        </div>
       </div>
       <p id="settings-notify-msg" class="message" role="alert" aria-live="polite"></p>
     </section>
@@ -468,9 +503,11 @@
         <button class="ghost settings-sub-back" type="button" aria-label="Back to settings">&larr;</button>
         <h2 class="subview-title">Workouts</h2>
       </div>
-      <div class="field">
-        <label for="set-rest">Default rest timer <span class="opt">seconds</span></label>
-        <input id="set-rest" type="number" inputmode="numeric" min="0" max="600" step="5" />
+      <div class="panel">
+        <div class="field">
+          <label for="set-rest">Default rest timer <span class="opt">seconds</span></label>
+          <input id="set-rest" type="number" inputmode="numeric" min="0" max="600" step="5" />
+        </div>
       </div>
       <p id="settings-workouts-msg" class="message" role="alert" aria-live="polite"></p>
     </section>
@@ -481,20 +518,22 @@
         <button class="ghost settings-sub-back" type="button" aria-label="Back to settings">&larr;</button>
         <h2 class="subview-title">Appearance &amp; Units</h2>
       </div>
-      <div class="field">
-        <label for="set-theme">Theme</label>
-        <select id="set-theme">
-          <option value="system">Match device</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="set-units">Measurement units</label>
-        <select id="set-units">
-          <option value="imperial">Imperial (lb, in)</option>
-          <option value="metric">Metric (kg, cm)</option>
-        </select>
+      <div class="panel">
+        <div class="field">
+          <label for="set-theme">Theme</label>
+          <select id="set-theme">
+            <option value="system">Match device</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="set-units">Measurement units</label>
+          <select id="set-units">
+            <option value="imperial">Imperial (lb, in)</option>
+            <option value="metric">Metric (kg, cm)</option>
+          </select>
+        </div>
       </div>
       <p id="settings-appearance-msg" class="message" role="alert" aria-live="polite"></p>
     </section>
@@ -505,16 +544,18 @@
         <button class="ghost settings-sub-back" type="button" aria-label="Back to settings">&larr;</button>
         <h2 class="subview-title">Data</h2>
       </div>
-      <button id="settings-export" class="btn-dark settings-section" type="button">
-        Export workout history (CSV)
-      </button>
-      <button id="settings-export-json" class="btn-dark settings-section" type="button">
-        Export all my data (JSON backup)
-      </button>
-      <button id="settings-import-btn" class="btn-dark settings-section" type="button">
-        Import data from a backup
-      </button>
-      <input id="settings-import-file" type="file" accept="application/json,.json" hidden />
+      <div class="panel">
+        <button id="settings-export" class="btn-dark settings-section" type="button">
+          Export workout history (CSV)
+        </button>
+        <button id="settings-export-json" class="btn-dark settings-section" type="button">
+          Export all my data (JSON backup)
+        </button>
+        <button id="settings-import-btn" class="btn-dark settings-section" type="button">
+          Import data from a backup
+        </button>
+        <input id="settings-import-file" type="file" accept="application/json,.json" hidden />
+      </div>
       <p id="settings-data-msg" class="message" role="alert" aria-live="polite"></p>
     </section>
 
@@ -525,13 +566,15 @@
         <h2 class="subview-title">Change password</h2>
       </div>
       <form id="settings-password-form" novalidate>
-        <div class="field">
-          <label for="set-cur-pw">Current password</label>
-          <input id="set-cur-pw" type="password" autocomplete="current-password" />
-        </div>
-        <div class="field">
-          <label for="set-new-pw">New password</label>
-          <input id="set-new-pw" type="password" autocomplete="new-password" minlength="8" />
+        <div class="panel">
+          <div class="field">
+            <label for="set-cur-pw">Current password</label>
+            <input id="set-cur-pw" type="password" autocomplete="current-password" />
+          </div>
+          <div class="field">
+            <label for="set-new-pw">New password</label>
+            <input id="set-new-pw" type="password" autocomplete="new-password" minlength="8" />
+          </div>
         </div>
         <p id="settings-password-msg" class="message" role="alert" aria-live="polite"></p>
         <button id="settings-password-save" class="submit" type="submit">Change password</button>
@@ -550,20 +593,22 @@
         it is not full encryption.
       </p>
       <form id="photo-pin-form" novalidate>
-        <div id="photo-pin-current-field" class="field" hidden>
-          <label for="photo-pin-current">Current PIN</label>
-          <input id="photo-pin-current" type="password" inputmode="numeric"
-                 pattern="[0-9]*" maxlength="8" autocomplete="off" />
-        </div>
-        <div class="field">
-          <label for="photo-pin-new">New PIN <span class="opt">4–8 digits</span></label>
-          <input id="photo-pin-new" type="password" inputmode="numeric"
-                 pattern="[0-9]*" maxlength="8" autocomplete="off" />
-        </div>
-        <div class="field">
-          <label for="photo-pin-confirm">Confirm PIN</label>
-          <input id="photo-pin-confirm" type="password" inputmode="numeric"
-                 pattern="[0-9]*" maxlength="8" autocomplete="off" />
+        <div class="panel">
+          <div id="photo-pin-current-field" class="field" hidden>
+            <label for="photo-pin-current">Current PIN</label>
+            <input id="photo-pin-current" type="password" inputmode="numeric"
+                   pattern="[0-9]*" maxlength="8" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="photo-pin-new">New PIN <span class="opt">4–8 digits</span></label>
+            <input id="photo-pin-new" type="password" inputmode="numeric"
+                   pattern="[0-9]*" maxlength="8" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="photo-pin-confirm">Confirm PIN</label>
+            <input id="photo-pin-confirm" type="password" inputmode="numeric"
+                   pattern="[0-9]*" maxlength="8" autocomplete="off" />
+          </div>
         </div>
         <p id="photo-pin-msg" class="message" role="alert" aria-live="polite"></p>
         <button id="photo-pin-save" class="submit" type="submit">Set PIN</button>
@@ -581,9 +626,11 @@
         This soft-deletes your account, routines, and active workout. Type your
         email to confirm.
       </p>
-      <div class="field">
-        <label for="set-delete-email">Email</label>
-        <input id="set-delete-email" type="email" placeholder="you@example.com" autocomplete="off" />
+      <div class="panel">
+        <div class="field">
+          <label for="set-delete-email">Email</label>
+          <input id="set-delete-email" type="email" placeholder="you@example.com" autocomplete="off" />
+        </div>
       </div>
       <p id="settings-delete-msg" class="message" role="alert" aria-live="polite"></p>
       <button id="settings-delete" class="btn-danger" type="button" disabled>Delete account</button>
@@ -640,12 +687,13 @@
     </nav>
   </div>
 
-  <!-- Full-size progress photo, tapped from a measurement entry. Left/right
-       edges page through the set; centre / backdrop / Esc close. -->
+  <!-- Full-size progress photo, tapped from a measurement entry. Arrow buttons /
+       swipe / arrow keys page through every progress photo; X / backdrop / Esc close. -->
   <div id="measurement-photo-viewer" class="measurement-photo-viewer" hidden>
     <img id="measurement-photo-viewer-img" alt="Progress photo" />
-    <button id="measurement-photo-viewer-prev" class="photo-viewer-zone photo-viewer-zone--prev" type="button" aria-label="Previous photo"></button>
-    <button id="measurement-photo-viewer-next" class="photo-viewer-zone photo-viewer-zone--next" type="button" aria-label="Next photo"></button>
+    <button id="measurement-photo-viewer-close" class="photo-viewer-close" type="button" aria-label="Close">&#10005;</button>
+    <button id="measurement-photo-viewer-prev" class="photo-viewer-zone photo-viewer-zone--prev" type="button" aria-label="Previous photo">&#8249;</button>
+    <button id="measurement-photo-viewer-next" class="photo-viewer-zone photo-viewer-zone--next" type="button" aria-label="Next photo">&#8250;</button>
     <span id="measurement-photo-viewer-count" class="photo-viewer-count" hidden></span>
   </div>
 
@@ -711,6 +759,6 @@
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=53"></script>
+  <script src="/app.js?v=56"></script>
 </body>
 </html>

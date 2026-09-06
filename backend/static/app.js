@@ -159,6 +159,7 @@ const homeHistoryListEl = document.getElementById("home-history-list");
 const homeHistoryMoreBtn = document.getElementById("home-history-more");
 const homeCalendarEl = document.getElementById("home-calendar");
 const homeCalendarGridEl = document.getElementById("home-calendar-grid");
+const homeCalendarTitleEl = document.getElementById("home-calendar-title");
 const historyView = document.getElementById("history-view");
 const historyBackBtn = document.getElementById("history-back");
 const historyStatusEl = document.getElementById("history-status");
@@ -191,6 +192,7 @@ const measurementsChartEl = document.getElementById("measurements-chart");
 const measurementsFilterEl = document.getElementById("measurements-filter");
 const measurementsStatusEl = document.getElementById("measurements-status");
 const measurementsListEl = document.getElementById("measurements-list");
+const measurementsListPanelEl = document.getElementById("measurements-list-panel");
 const measurementsTabsEl = document.getElementById("measurements-tabs");
 const measurementsTabExercisesBtn = document.getElementById("measurements-tab-exercises");
 const measurementsTabListBtn = document.getElementById("measurements-tab-list");
@@ -217,6 +219,7 @@ const measurementPhotoViewerEl = document.getElementById("measurement-photo-view
 const measurementPhotoViewerImg = document.getElementById("measurement-photo-viewer-img");
 const measurementPhotoViewerPrev = document.getElementById("measurement-photo-viewer-prev");
 const measurementPhotoViewerNext = document.getElementById("measurement-photo-viewer-next");
+const measurementPhotoViewerClose = document.getElementById("measurement-photo-viewer-close");
 const measurementPhotoViewerCount = document.getElementById("measurement-photo-viewer-count");
 
 // Settings: a navigation list whose rows each open their own page.
@@ -3559,8 +3562,9 @@ async function loadHomeHistory() {
     homeHistoryEl.hidden = false;
   } catch (err) {
     homeHistoryEl.hidden = true;
+  } finally {
+    loadHomeCalendar();   // keep the current-month grid in sync with the preview
   }
-  loadHomeCalendar();   // keep the current-month grid in sync with the preview
 }
 
 // Compact grid of the current month under "Recent workouts": days with a
@@ -3572,6 +3576,8 @@ async function loadHomeCalendar() {
     const items = await res.json();          // [{id, at, name}] ascending
     if (items.length === 0) { homeCalendarEl.hidden = true; return; }
     const now = new Date();
+    homeCalendarTitleEl.textContent =
+      now.toLocaleDateString(undefined, { month: "long" });
     homeCalendarGridEl.replaceChildren(
       buildCalendarMonth(
         now.getFullYear(), now.getMonth(),
@@ -3997,6 +4003,7 @@ function applyMeasurementsMode() {
   const isCompare = measurementsMode === "compare";
 
   progressExercisesEl.hidden = !isExercises;
+  measurementsListPanelEl.hidden = !isList;
   for (const el of [measurementsChartEl, measurementsFilterEl, measurementsStatusEl, measurementsListEl]) {
     el.hidden = !isList;
   }
@@ -4295,10 +4302,17 @@ async function renderPhotoTimeline() {
     );
     return;
   }
-  for (const item of photoFeed) measurementsPhotosEl.append(buildPhotoTimelineCard(item));
+  // The viewer pages through every progress photo, not just one entry's set, so
+  // hand each card the flat list and its own starting offset into it.
+  const allPhotos = photoFeed.flatMap((e) => e.photos);
+  let offset = 0;
+  for (const item of photoFeed) {
+    measurementsPhotosEl.append(buildPhotoTimelineCard(item, allPhotos, offset));
+    offset += item.photos.length;
+  }
 }
 
-function buildPhotoTimelineCard(item) {
+function buildPhotoTimelineCard(item, allPhotos = item.photos, startOffset = 0) {
   const card = document.createElement("div");
   card.className = "photo-timeline-card";
 
@@ -4316,7 +4330,7 @@ function buildPhotoTimelineCard(item) {
     const img = document.createElement("img");
     img.className = "photo-timeline-thumb photo-timeline-thumb--loading";
     img.alt = `Progress photo ${i + 1} from ${fmtYmd(item.measured_on)}`;
-    img.addEventListener("click", () => openPhotoViewer(item.photos, i));
+    img.addEventListener("click", () => openPhotoViewer(allPhotos, startOffset + i));
     photoThumbSrc.set(img, src);
     if (photoThumbObserver) photoThumbObserver.observe(img);
     else { img.src = src; img.classList.remove("photo-timeline-thumb--loading"); }
@@ -4657,6 +4671,7 @@ function closePhotoViewer() {
 }
 measurementPhotoViewerPrev.addEventListener("click", (e) => { e.stopPropagation(); stepViewer(-1); });
 measurementPhotoViewerNext.addEventListener("click", (e) => { e.stopPropagation(); stepViewer(1); });
+measurementPhotoViewerClose.addEventListener("click", (e) => { e.stopPropagation(); closePhotoViewer(); });
 measurementPhotoViewerImg.addEventListener("click", (e) => { e.stopPropagation(); closePhotoViewer(); });
 measurementPhotoViewerEl.addEventListener("click", closePhotoViewer);   // backdrop
 document.addEventListener("keydown", (e) => {
