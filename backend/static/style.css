@@ -1121,6 +1121,7 @@ form > .panel:first-child { margin-top: 0; }
   padding-bottom: 2px;
 }
 .set-num {
+  position: relative;
   display: grid;
   place-items: center;
   height: 38px;
@@ -1129,6 +1130,25 @@ form > .panel:first-child { margin-top: 0; }
   font-size: 13px;
   font-weight: 700;
 }
+.set-num--tappable { cursor: pointer; }
+.set-type-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: var(--muted);
+  color: var(--surface);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 15px;
+  text-align: center;
+}
+.set-type-badge--warmup  { background: var(--accent); color: #fff; }
+.set-type-badge--dropset { background: #f59e0b; color: #1a1200; }
+.set-type-badge--failure { background: var(--error); color: #fff; }
 .set-input {
   width: 100%;
   height: 38px;
@@ -1329,6 +1349,28 @@ form > .panel:first-child { margin-top: 0; }
 .rest-editor-step:hover:not(:disabled) { border-color: var(--accent); }
 .rest-editor-step:disabled { opacity: 0.4; cursor: default; }
 .rest-editor-box .ghost { margin-top: 0; }
+
+.set-type-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.set-type-option {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.set-type-option:hover { border-color: var(--accent); }
+.set-type-option--selected {
+  border-color: var(--accent);
+  background: var(--surface-3);
+}
 
 /* --- Plate calculator (opened from the workout stats row) --- */
 .plate-calc {

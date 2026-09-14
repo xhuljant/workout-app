@@ -131,6 +131,13 @@ const restEditorSaveBtn = document.getElementById("rest-editor-save");
 const restEditorCancelBtn = document.getElementById("rest-editor-cancel");
 const restEditorDefaultBtn = document.getElementById("rest-editor-default");
 
+// Set-type editor modal (normal/warm-up/drop/failure)
+const setTypeEditorEl = document.getElementById("set-type-editor");
+const setTypeOptionBtns = setTypeEditorEl
+  ? Array.from(setTypeEditorEl.querySelectorAll(".set-type-option"))
+  : [];
+const setTypeCancelBtn = document.getElementById("set-type-cancel");
+
 // Routine editor sub-view
 const newRoutineBtn = document.getElementById("new-routine");
 const routineView = document.getElementById("routine-view");
@@ -1767,9 +1774,30 @@ function trackingOf(entry) {
 }
 
 function emptySetFor(mode, extra = {}) {
-  const s = { ...extra };
+  const s = { set_type: "normal", ...extra };
   for (const f of (TRACKING[mode] || TRACKING.weight_reps).fields) s[f] = null;
   return s;
+}
+
+// Warm-up / drop set / failure -- a per-set tag, separate from tracking-mode
+// fields and the "done" checkbox. Persisted in set_type, default "normal".
+const SET_TYPES = {
+  normal:  { label: "Normal",   badge: "" },
+  warmup:  { label: "Warm-up",  badge: "W" },
+  dropset: { label: "Drop set", badge: "D" },
+  failure: { label: "Failure",  badge: "F" },
+};
+
+// Small corner badge for a tagged (non-normal) set, or null for a normal one.
+// Shared by the live workout, routine editor, and read-only history so the
+// visual treatment stays identical everywhere.
+function setTypeBadge(set) {
+  const type = SET_TYPES[set && set.set_type] ? set.set_type : "normal";
+  if (type === "normal") return null;
+  const span = document.createElement("span");
+  span.className = `set-type-badge set-type-badge--${type}`;
+  span.textContent = SET_TYPES[type].badge;
+  return span;
 }
 
 function parseTime(v) {
@@ -2078,9 +2106,14 @@ function buildExerciseBlock(entry, exIndex) {
 
   entry.sets.forEach((set, setIndex) => {
     const num = document.createElement("div");
-    num.className = "set-num";
+    num.className = "set-num set-num--tappable";
     if (anyPr(set)) num.classList.add("set-num--pr");
     num.textContent = String(setIndex + 1);
+    const badge = setTypeBadge(set);
+    if (badge) num.append(badge);
+    num.addEventListener("click", () => {
+      openSetTypeEditor({ set, onSave: () => { renderWorkout(); scheduleSave(); } });
+    });
 
     const prevCell = document.createElement("div");
     prevCell.className = "set-prev";
@@ -2485,6 +2518,38 @@ function commitRestEditor(value) {
 restEditorSaveBtn.addEventListener("click", () => commitRestEditor(restEditorValue));
 if (restEditorDefaultBtn) {
   restEditorDefaultBtn.addEventListener("click", () => commitRestEditor(null));
+}
+
+// --- Set-type editor -----------------------------------------------------
+// Opened by tapping a set's number, in either a live workout or the routine
+// editor. Edits ONE set object -- ctx.set -- and calls ctx.onSave() to persist
+// + re-render in whichever screen it was opened from.
+let setTypeEditorCtx = null;
+
+function openSetTypeEditor(ctx) {
+  setTypeEditorCtx = ctx || null;
+  const current = (ctx && ctx.set && ctx.set.set_type) || "normal";
+  for (const btn of setTypeOptionBtns) {
+    btn.classList.toggle("set-type-option--selected", btn.dataset.type === current);
+  }
+  openOverlay(setTypeEditorEl);
+}
+for (const btn of setTypeOptionBtns) {
+  btn.addEventListener("click", () => {
+    closeOverlay(setTypeEditorEl);
+    const ctx = setTypeEditorCtx;
+    if (!ctx || !ctx.set) return;
+    ctx.set.set_type = btn.dataset.type;
+    if (typeof ctx.onSave === "function") ctx.onSave();
+  });
+}
+if (setTypeCancelBtn) {
+  setTypeCancelBtn.addEventListener("click", () => closeOverlay(setTypeEditorEl));
+}
+if (setTypeEditorEl) {
+  setTypeEditorEl.addEventListener("click", (e) => {
+    if (e.target === setTypeEditorEl) closeOverlay(setTypeEditorEl);   // tap the backdrop
+  });
 }
 
 // --- Plate calculator -------------------------------------------------
@@ -3605,8 +3670,13 @@ function buildRoutineExerciseBlock(entry, exIndex) {
 
   entry.sets.forEach((set, setIndex) => {
     const num = document.createElement("div");
-    num.className = "set-num";
+    num.className = "set-num set-num--tappable";
     num.textContent = String(setIndex + 1);
+    const badge = setTypeBadge(set);
+    if (badge) num.append(badge);
+    num.addEventListener("click", () => {
+      openSetTypeEditor({ set, onSave: renderRoutineEditor });
+    });
 
     const inputs = t.fields.map((f) => {
       const meta = FIELD_META[f];
@@ -5122,6 +5192,8 @@ function renderWorkoutReadonly(container, content) {
       const num = document.createElement("div");
       num.className = "set-num";
       num.textContent = String(i + 1);
+      const badge = setTypeBadge(set);
+      if (badge) num.append(badge);
 
       const cells = t.fields.map((f) => {
         const c = document.createElement("div");

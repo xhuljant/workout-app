@@ -173,6 +173,9 @@ class ExercisePublic(BaseModel):
 
 # --- Workouts --------------------------------------------------------------
 
+SetType = Literal["normal", "warmup", "dropset", "failure"]
+
+
 class WorkoutSet(BaseModel):
     """One set. Only the fields the exercise's tracking mode uses are filled;
     all stay optional so a half-entered row still saves."""
@@ -181,6 +184,8 @@ class WorkoutSet(BaseModel):
     seconds: int | None = None
     distance: float | None = None
     done: bool = False
+    # How this set was performed -- normal, warm-up, drop set, or taken to failure.
+    set_type: SetType = "normal"
     # Set by the client when a completed set beats the user's previous best for
     # that exercise. Stored in content so History can show the 🏆 too.
     pr_weight: bool = False
@@ -385,6 +390,7 @@ class RoutineSet(BaseModel):
     reps: int | None = None
     seconds: int | None = None
     distance: float | None = None
+    set_type: SetType = "normal"
 
 
 class RoutineExerciseEntry(BaseModel):

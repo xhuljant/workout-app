@@ -683,6 +683,20 @@
     </div>
   </div>
 
+  <!-- Tag a set as normal/warm-up/drop/failure. Opened by tapping a set's number. -->
+  <div id="set-type-editor" class="rest-editor" hidden>
+    <div class="rest-editor-box">
+      <h3 class="rest-editor-title">Set type</h3>
+      <div class="set-type-options">
+        <button type="button" class="set-type-option" data-type="normal">Normal</button>
+        <button type="button" class="set-type-option" data-type="warmup">Warm-up</button>
+        <button type="button" class="set-type-option" data-type="dropset">Drop set</button>
+        <button type="button" class="set-type-option" data-type="failure">Failure</button>
+      </div>
+      <button id="set-type-cancel" class="ghost" type="button">Cancel</button>
+    </div>
+  </div>
+
   <!-- Plate calculator: "what's on the bar" helper, opened from the workout stats row. -->
   <div id="plate-calc" class="plate-calc" hidden>
     <div class="plate-calc-box">
@@ -823,6 +837,6 @@
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=61"></script>
+  <script src="/app.js?v=62"></script>
 </body>
 </html>
