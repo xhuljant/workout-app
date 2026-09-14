@@ -2097,7 +2097,22 @@ function buildExerciseBlock(entry, exIndex) {
       inp.inputMode = meta.mode;
       if (f === "seconds") inp.placeholder = "m:ss";
       inp.value = meta.show(set[f]);
+
+      // Tapping a pre-filled field clears it so you can type straight away; the
+      // old value stays visible as faint placeholder text. Tapping away without
+      // typing restores it untouched.
+      let dirty = false;
+      inp.addEventListener("focus", () => {
+        dirty = false;
+        if (inp.value !== "") { inp.placeholder = inp.value; inp.value = ""; }
+      });
+      inp.addEventListener("blur", () => {
+        if (!dirty && inp.value === "") inp.value = meta.show(set[f]);
+        if (f === "seconds") inp.placeholder = "m:ss";
+      });
+
       inp.addEventListener("input", () => {
+        dirty = true;
         set[f] = meta.parse(inp.value);
         updateWorkoutStats();
         scheduleSave();
