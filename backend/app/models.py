@@ -202,6 +202,11 @@ class Workout(Base):
     # routine or the user's default).
     rest_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Whole-session average heart rate (bpm) and calories burned, typically
+    # copied from the user's watch. Optional; editable after finishing too.
+    avg_hr: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    calories: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # {"exercises": [{"exercise_id", "name", "notes", "sets": [{"weight","reps","done"}]}]}
     content: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=lambda: {"exercises": []}

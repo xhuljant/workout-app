@@ -27,6 +27,7 @@ from ..schemas import (
     WorkoutPublic,
     WorkoutSet,
     WorkoutStart,
+    WorkoutDetailsUpdate,
     WorkoutSummary,
     WorkoutTrashItem,
     WorkoutUpdate,
@@ -56,6 +57,8 @@ def _summarize(workout: Workout, routine_names: dict | None = None) -> WorkoutSu
         exercise_count=len(exercises),
         set_count=set_count,
         volume=volume,
+        avg_hr=workout.avg_hr,
+        calories=workout.calories,
     )
 
 
@@ -89,8 +92,7 @@ def _fresh_exercises(source_exercises: list, *, keep_notes: bool) -> dict:
     """Copy an exercise list into a fresh workout body: logged numbers become
     targets, every set starts un-done, PR flags are dropped. The set's type
     (warm-up/drop/failure/normal) is part of the plan, not a logged result, so
-    it carries over like the numbers do. Cardio details (avg_hr, max_hr,
-    calories) are results of that session, so they're deliberately dropped."""
+    it carries over like the numbers do."""
     out = []
     for entry in source_exercises or []:
         out.append(
@@ -280,7 +282,7 @@ def export_history_csv(
     writer.writerow(
         ["date", "routine", "exercise", "tracking", "set",
          "weight_lb", "reps", "seconds", "distance_mi", "completed", "set_type",
-         "avg_hr", "max_hr", "calories"]
+         "workout_avg_hr", "workout_calories"]
     )
     cell = lambda v: v if v is not None else ""
     for w in workouts:
@@ -302,9 +304,8 @@ def export_history_csv(
                     cell(s.get("distance")),
                     "yes" if s.get("done") else "no",
                     s.get("set_type") or "normal",
-                    cell(s.get("avg_hr")),
-                    cell(s.get("max_hr")),
-                    cell(s.get("calories")),
+                    cell(w.avg_hr),
+                    cell(w.calories),
                 ])
 
     return Response(
@@ -560,6 +561,24 @@ def get_workout(
 ):
     """One of the user's workouts in full -- the History detail view."""
     return _owned_workout(db, current_user, workout_id)
+
+
+@router.patch("/{workout_id}/details", response_model=WorkoutPublic)
+def update_workout_details(
+    workout_id: uuid.UUID,
+    body: WorkoutDetailsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Set the workout's average heart rate and calories (active or finished).
+    Kept apart from PUT /active so it never bumps content_version and can't
+    collide with the set-editing autosave."""
+    workout = _owned_workout(db, current_user, workout_id)
+    workout.avg_hr = body.avg_hr
+    workout.calories = body.calories
+    db.commit()
+    db.refresh(workout)
+    return workout
 
 
 @router.get("/{workout_id}/share", response_model=ShareExport)

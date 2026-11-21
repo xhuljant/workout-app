@@ -110,6 +110,8 @@ const workoutSetsEl = document.getElementById("workout-sets");
 const workoutExercisesEl = document.getElementById("workout-exercises");
 const workoutEmptyEl = document.getElementById("workout-empty");
 const workoutAddExerciseBtn = document.getElementById("workout-add-exercise");
+const workoutDetailsEl = document.getElementById("workout-details");
+const workoutDetailsBtn = document.getElementById("workout-details-btn");
 const workoutFinishBtn = document.getElementById("workout-finish");
 const workoutDiscardBtn = document.getElementById("workout-discard");
 const toastEl = document.getElementById("toast");
@@ -137,12 +139,7 @@ const setTypeOptionBtns = setTypeEditorEl
   ? Array.from(setTypeEditorEl.querySelectorAll(".set-type-option"))
   : [];
 const setTypeCancelBtn = document.getElementById("set-type-cancel");
-const setTypeTitleEl = document.getElementById("set-type-title");
-const setCardioFieldsEl = document.getElementById("set-cardio-fields");
-const setCardioAvgHr = document.getElementById("set-cardio-avg-hr");
-const setCardioMaxHr = document.getElementById("set-cardio-max-hr");
-const setCardioCalories = document.getElementById("set-cardio-calories");
-const setCardioSaveBtn = document.getElementById("set-cardio-save");
+const setRemoveBtn = document.getElementById("set-remove");
 
 // Routine editor sub-view
 const newRoutineBtn = document.getElementById("new-routine");
@@ -181,6 +178,7 @@ const historyDetailView = document.getElementById("history-detail-view");
 const historyDetailBackBtn = document.getElementById("history-detail-back");
 const historyDetailTitleEl = document.getElementById("history-detail-title");
 const historyDetailMetaEl = document.getElementById("history-detail-meta");
+const historyDetailDetailsEl = document.getElementById("history-detail-details");
 const historyDetailExercisesEl = document.getElementById("history-detail-exercises");
 const historyDetailShareBtn = document.getElementById("history-detail-share");
 const historyDetailDeleteBtn = document.getElementById("history-detail-delete");
@@ -766,6 +764,17 @@ function moveBtn(dir, disabled, onClick) {
   b.textContent = dir < 0 ? "▲" : "▼";
   b.setAttribute("aria-label", dir < 0 ? "Move up" : "Move down");
   b.disabled = disabled;
+  b.addEventListener("click", (e) => { e.stopPropagation(); onClick(); });
+  return b;
+}
+
+// ✕ in the same boxed style as moveBtn, for removing an exercise.
+function removeBtn(onClick) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "routine-move exercise-remove";
+  b.textContent = "✕";
+  b.setAttribute("aria-label", "Remove exercise");
   b.addEventListener("click", (e) => { e.stopPropagation(); onClick(); });
   return b;
 }
@@ -1503,7 +1512,7 @@ function renderExerciseDetail(ex, body, stats, opts = {}) {
     weight_reps:  { key: "top_weight",   fmt: (n) => String(Math.round(n)), cap: "Top-set weight per session" },
     reps:         { key: "top_reps",     fmt: (n) => String(Math.round(n)), cap: "Top reps per session" },
     time:         { key: "top_seconds",  fmt: fmtTime, cap: "Longest time per session" },
-    distance_time:{ key: "top_distance", fmt: (n) => toDisplayDist(n).toFixed(1), cap: "Farthest distance per session" },
+    distance_time:{ key: "top_distance", fmt: (n) => n.toFixed(1), cap: "Farthest distance per session" },
   }[mode];
   if (stats.sessions.length >= 2) {
     const chart = buildExerciseChart(stats.sessions, CHART.key, CHART.fmt);
@@ -1551,7 +1560,6 @@ function renderExerciseDetail(ex, body, stats, opts = {}) {
       statTile("Longest", stats.longest_seconds == null ? "—" : fmtTime(stats.longest_seconds)),
       statTile("Total distance", fmtMiles(stats.total_distance)),
       statTile("Total time", stats.total_seconds == null ? "—" : fmtTime(stats.total_seconds)),
-      statTile("Calories", stats.total_calories == null ? "—" : `${stats.total_calories} kcal`),
       statTile("Sessions", String(stats.performed_count)),
     );
   }
@@ -1569,9 +1577,7 @@ function renderExerciseDetail(ex, body, stats, opts = {}) {
     main.textContent = `${fmtDate(s.date)}  ·  ${setSummary(
       { weight: s.top_weight, reps: s.top_reps, seconds: s.top_seconds, distance: s.top_distance },
       mode,
-    )}` + (mode === "weight_reps" ? `  ·  ${fmtVolume(s.volume)}` : "")
-      + (s.avg_hr != null ? `  ·  ♥ ${s.avg_hr}` : "")
-      + (s.calories != null ? `  ·  ${s.calories} kcal` : "");
+    )}` + (mode === "weight_reps" ? `  ·  ${fmtVolume(s.volume)}` : "");
     rowEl.append(main);
 
     if (!opts.progressOnly) {
@@ -1774,8 +1780,7 @@ const TRACKING = {
   weight_reps:  { fields: ["weight", "reps"],     heads: ["LBS", "REPS"] },
   reps:         { fields: ["reps"],               heads: ["REPS"] },
   time:         { fields: ["seconds"],            heads: ["TIME"] },
-  distance_time:{ fields: ["distance", "seconds"],
-                  get heads() { return [distUnit().toUpperCase(), "TIME"]; } },
+  distance_time:{ fields: ["distance", "seconds"], heads: ["MI", "TIME"] },
 };
 
 function trackingOf(entry) {
@@ -1822,28 +1827,15 @@ function parseTime(v) {
   return Number.isFinite(n) ? n : null;
 }
 const fmtTime = (sec) => formatDuration((Number(sec) || 0) * 1000);
-// Distance is always stored in miles; it's shown (and typed) in km when the
-// user's units preference is metric.
-const MI_TO_KM = 1.609344;
-const distUnit = () => (measurementUnits() === "metric" ? "km" : "mi");
-const toDisplayDist = (mi) => (distUnit() === "km" ? mi * MI_TO_KM : mi);
-const fromDisplayDist = (d) => (distUnit() === "km" ? d / MI_TO_KM : d);
-const fmtMiles = (n) =>
-  n == null ? "–" : `${toDisplayDist(Number(n)).toFixed(1)} ${distUnit()}`;
+const fmtMiles = (n) => (n == null ? "–" : `${Number(n).toFixed(1)} mi`);
 const fmtPace = (secPerMi) =>
-  secPerMi == null
-    ? "–"
-    : `${formatDuration(Math.round(secPerMi / toDisplayDist(1)) * 1000)} /${distUnit()}`;
+  secPerMi == null ? "–" : `${formatDuration(secPerMi * 1000)} /mi`;
 
 // Per-metric input behaviour.
 const FIELD_META = {
   weight:   { mode: "decimal", parse: (v) => numOrNull(parseFloat(v)), show: (v) => v ?? "" },
   reps:     { mode: "numeric", parse: (v) => numOrNull(parseInt(v, 10)), show: (v) => v ?? "" },
-  distance: {
-    mode: "decimal",
-    parse: (v) => { const n = numOrNull(parseFloat(v)); return n == null ? null : fromDisplayDist(n); },
-    show: (v) => (v == null ? "" : String(+toDisplayDist(v).toFixed(2))),
-  },
+  distance: { mode: "decimal", parse: (v) => numOrNull(parseFloat(v)), show: (v) => v ?? "" },
   seconds:  { mode: "numeric", parse: parseTime, show: (v) => (v == null ? "" : fmtTime(v)) },
 };
 const numOrNull = (n) => (Number.isFinite(n) ? n : null);
@@ -1859,49 +1851,22 @@ function setSummary(set, mode) {
   if (mode === "reps") return set.reps == null ? "–" : String(set.reps);
   if (mode === "time") return set.seconds == null ? "–" : fmtTime(set.seconds);
   if (set.distance == null && set.seconds == null) return "–";
-  return `${set.distance == null ? "–" : toDisplayDist(Number(set.distance)).toFixed(1) + distUnit()}·${
+  return `${set.distance == null ? "–" : Number(set.distance).toFixed(1) + "mi"}·${
     set.seconds == null ? "–" : fmtTime(set.seconds)
   }`;
 }
 
-// Secondary line under a cardio set: derived pace plus any heart-rate /
-// calorie details. "" when there's nothing to show.
-function cardioSummary(set) {
-  if (!set) return "";
-  const parts = [];
-  if (set.distance > 0 && set.seconds > 0) parts.push(fmtPace(set.seconds / set.distance));
-  if (set.avg_hr != null || set.max_hr != null) {
-    const hr = [];
-    if (set.avg_hr != null) hr.push(`${set.avg_hr} avg`);
-    if (set.max_hr != null) hr.push(`${set.max_hr} max`);
-    parts.push(`♥ ${hr.join(" / ")}`);
-  }
-  if (set.calories != null) parts.push(`${set.calories} kcal`);
-  return parts.join(" · ");
-}
-
-// Full-width row under a cardio set for cardioSummary(); hidden when empty.
-function cardioLine(set) {
-  const line = document.createElement("div");
-  line.className = "set-cardio-line";
-  line.update = () => {
-    line.textContent = cardioSummary(set);
-    line.hidden = !line.textContent;
-  };
-  line.update();
-  return line;
-}
-
 // The CSS grid-template-columns for a sets grid of a given mode.
 //   withPrev/withDone add the PREV and ✓ columns (workout view only).
-function setsGridCols(mode, { withPrev = true, withDone = true } = {}) {
+//   withTail adds a narrow last column (the read-only view's ✓/🏆 mark).
+function setsGridCols(mode, { withPrev = true, withDone = true, withTail = false } = {}) {
   const t = TRACKING[mode] || TRACKING.weight_reps;
   return [
     "1.7rem",
     ...(withPrev ? ["3.6rem"] : []),
     ...t.fields.map(() => "minmax(0, 1fr)"),
     ...(withDone ? ["2.75rem"] : []),   // the ✓ cell is a 44px tap target
-    withDone ? "1.6rem" : "1.2rem",     // remove ✕ -- roomier in the live workout
+    ...(withTail ? ["2.5rem"] : []),
   ].join(" ");
 }
 function anyPr(set) {
@@ -2003,6 +1968,136 @@ startEmptyBtn.addEventListener("click", async () => {
   }
 });
 
+// --- Workout heart rate & calories ----------------------------------------
+// Whole-session numbers the user copies from their watch. An inline card (no
+// popup): collapsed it's an "Add" button or a one-line summary; expanded it's
+// two inputs + Save. Saved via PATCH /details, separate from the set autosave,
+// so it works the same on the live workout and in History.
+function workoutDetailsSummary(w) {
+  const parts = [];
+  if (w.avg_hr != null) parts.push(`♥ ${w.avg_hr} bpm avg`);
+  if (w.calories != null) parts.push(`${w.calories} kcal`);
+  return parts.join(" · ");
+}
+
+function intInRange(v, min, max) {
+  const n = numOrNull(parseInt(v, 10));
+  return n != null && n >= min && n <= max ? n : null;
+}
+
+// opts.externalAdd: the "add" control lives elsewhere (the live workout's ♥
+// button, which calls container.openForm()), so collapsed + empty shows nothing.
+function renderWorkoutDetails(container, workout, opts = {}) {
+  const { onSaved, externalAdd = false } = opts;
+  container.replaceChildren();
+  container.className = "workout-details";
+  const summary = workoutDetailsSummary(workout);
+
+  const showCollapsed = () => {
+    container.replaceChildren();
+    if (!summary) {
+      if (externalAdd) return;
+      const add = document.createElement("button");
+      add.type = "button";
+      add.className = "ghost workout-details-add";
+      add.textContent = "♥ Add heart rate & calories";
+      add.addEventListener("click", showForm);
+      container.append(add);
+      return;
+    }
+    const line = document.createElement("div");
+    line.className = "workout-details-line";
+    const text = document.createElement("span");
+    text.textContent = summary;
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "workout-details-edit";
+    edit.textContent = "Edit";
+    edit.addEventListener("click", showForm);
+    line.append(text, edit);
+    container.append(line);
+  };
+
+  const field = (label, value) => {
+    const wrap = document.createElement("label");
+    wrap.className = "workout-details-field";
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.inputMode = "numeric";
+    inp.autocomplete = "off";
+    inp.value = value ?? "";
+    wrap.append(label, inp);
+    return [wrap, inp];
+  };
+
+  function showForm() {
+    container.replaceChildren();
+    const [hrWrap, hrInp] = field("Avg HR (bpm)", workout.avg_hr);
+    const [calWrap, calInp] = field("Calories (kcal)", workout.calories);
+    const row = document.createElement("div");
+    row.className = "workout-details-fields";
+    row.append(hrWrap, calWrap);
+
+    const err = document.createElement("p");
+    err.className = "workout-details-error";
+    err.hidden = true;
+
+    const actions = document.createElement("div");
+    actions.className = "workout-details-actions";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "ghost";
+    cancel.textContent = "Cancel";
+    cancel.addEventListener("click", showCollapsed);
+    const save = document.createElement("button");
+    save.type = "button";
+    save.className = "submit";
+    save.textContent = "Save";
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      err.hidden = true;
+      try {
+        const res = await authFetch(`${WORKOUTS_API}/${workout.id}/details`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            avg_hr: intInRange(hrInp.value, 20, 250),
+            calories: intInRange(calInp.value, 0, 10000),
+          }),
+        });
+        if (!res.ok) throw new Error("Could not save.");
+        const saved = await res.json();
+        workout.avg_hr = saved.avg_hr;
+        workout.calories = saved.calories;
+        renderWorkoutDetails(container, workout, opts);
+        if (typeof onSaved === "function") onSaved();
+      } catch (e) {
+        err.textContent = e.message || "Could not reach the server.";
+        err.hidden = false;
+        save.disabled = false;
+      }
+    });
+    actions.append(cancel, save);
+
+    container.append(row, err, actions);
+    hrInp.focus();
+  }
+
+  container.openForm = showForm;
+  showCollapsed();
+}
+
+// The live workout's details card + its ♥ button (tinted once values exist).
+function renderLiveWorkoutDetails() {
+  const sync = () => workoutDetailsBtn.classList.toggle(
+    "has-values", !!workoutDetailsSummary(activeWorkout));
+  renderWorkoutDetails(workoutDetailsEl, activeWorkout, { externalAdd: true, onSaved: sync });
+  sync();
+}
+workoutDetailsBtn.addEventListener("click", () => {
+  if (workoutDetailsEl.openForm) workoutDetailsEl.openForm();
+});
+
 function openWorkout() {
   ensureContent();
   // Neutralise any half-open picker / routine editor we may be jumping over.
@@ -2011,6 +2106,7 @@ function openWorkout() {
   showView(workoutView);
   setSaveState(workoutDirty ? "offline" : "saved");
   renderWorkout();
+  renderLiveWorkoutDetails();
   startDurationTimer();
   resumeRestTimer();         // re-show the countdown if one's still running
   refreshStartButton();      // turn the home button green + start the elapsed clock
@@ -2070,12 +2166,18 @@ function buildExerciseBlock(entry, exIndex) {
   name.className = "workout-exercise-name";
   name.textContent = entry.name;
 
-  const removeEx = document.createElement("button");
-  removeEx.type = "button";
-  removeEx.className = "link-danger";
-  removeEx.textContent = "Remove";
-  removeEx.addEventListener("click", () => {
-    activeWorkout.content.exercises.splice(exIndex, 1);
+  const removeEx = removeBtn(async () => {
+    // Logged work would be lost -- ask first. Nothing logged: remove straight away.
+    const logged = entry.sets.filter((s) => s.done).length;
+    if (logged > 0 && !(await appConfirm({
+      title: "Remove exercise?",
+      body: `${entry.name} has ${logged} logged set${logged === 1 ? "" : "s"}. They'll be removed from this workout.`,
+      confirmLabel: "Remove",
+      danger: true,
+    }))) return;
+    const i = activeWorkout.content.exercises.indexOf(entry);
+    if (i === -1) return;
+    activeWorkout.content.exercises.splice(i, 1);
     renderWorkout();
     scheduleSave();
   });
@@ -2123,23 +2225,48 @@ function buildExerciseBlock(entry, exIndex) {
   notes.rows = 1;
   notes.placeholder = "Add notes here…";
   notes.value = entry.notes || "";
+  // Hidden until there's a note; the "+ Note" button beside the rest timer opens it.
+  notes.hidden = !notes.value.trim();
   notes.addEventListener("input", () => {
     entry.notes = notes.value;
     scheduleSave();
+  });
+  notes.addEventListener("blur", () => {
+    if (notes.value.trim()) return;
+    notes.hidden = true;
+    if (entry.notes) {
+      entry.notes = notes.value = "";
+      scheduleSave();
+    }
   });
   block.append(notes);
 
   const restLabel = document.createElement("button");
   restLabel.type = "button";
   restLabel.className = "exercise-rest";
-  restLabel.textContent = `Rest Timer: ${fmtRest(workoutRestSeconds(entry))}`;
+  restLabel.textContent = `⏱ ${fmtRest(workoutRestSeconds(entry))}`;
+  restLabel.setAttribute("aria-label", "Rest timer");
   restLabel.addEventListener("click", () => {
     openRestEditor({
       entry,
       onSave: () => { renderWorkout(); scheduleSave(); },
     });
   });
-  block.append(restLabel);
+
+  const noteBtn = document.createElement("button");
+  noteBtn.type = "button";
+  noteBtn.className = "exercise-rest exercise-note-btn";
+  noteBtn.textContent = "+ Note";
+  noteBtn.addEventListener("click", () => {
+    notes.hidden = false;
+    notes.focus();
+    notes.setSelectionRange(notes.value.length, notes.value.length);
+  });
+
+  const restRow = document.createElement("div");
+  restRow.className = "exercise-rest-row";
+  restRow.append(restLabel, noteBtn);
+  block.append(restRow);
 
   const mode = trackingOf(entry);
   const t = TRACKING[mode];
@@ -2148,7 +2275,7 @@ function buildExerciseBlock(entry, exIndex) {
   const grid = document.createElement("div");
   grid.className = "sets-grid";
   grid.style.gridTemplateColumns = setsGridCols(mode);
-  for (const label of ["SET", "PREV", ...t.heads, "✓", ""]) {
+  for (const label of ["SET", "PREV", ...t.heads, "✓"]) {
     const cell = document.createElement("div");
     cell.className = "sets-grid-head";
     cell.textContent = label;
@@ -2165,8 +2292,12 @@ function buildExerciseBlock(entry, exIndex) {
     num.addEventListener("click", () => {
       openSetTypeEditor({
         set,
-        cardio: mode === "distance_time",
         onSave: () => { renderWorkout(); scheduleSave(); },
+        onRemove: () => {
+          entry.sets.splice(entry.sets.indexOf(set), 1);
+          renderWorkout();
+          scheduleSave();
+        },
       });
     });
 
@@ -2176,8 +2307,6 @@ function buildExerciseBlock(entry, exIndex) {
       prev && prev.last_sets && prev.last_sets[setIndex],
       mode,
     );
-
-    const cardio = mode === "distance_time" ? cardioLine(set) : null;
 
     const inputs = t.fields.map((f) => {
       const meta = FIELD_META[f];
@@ -2204,7 +2333,6 @@ function buildExerciseBlock(entry, exIndex) {
       inp.addEventListener("input", () => {
         dirty = true;
         set[f] = meta.parse(inp.value);
-        if (cardio) cardio.update();
         updateWorkoutStats();
         scheduleSave();
       });
@@ -2236,19 +2364,7 @@ function buildExerciseBlock(entry, exIndex) {
     });
     doneWrap.append(done);
 
-    const removeSet = document.createElement("button");
-    removeSet.type = "button";
-    removeSet.className = "set-remove";
-    removeSet.setAttribute("aria-label", "Remove set");
-    removeSet.textContent = "✕";
-    removeSet.addEventListener("click", () => {
-      entry.sets.splice(setIndex, 1);
-      renderWorkout();
-      scheduleSave();
-    });
-
-    grid.append(num, prevCell, ...inputs, doneWrap, removeSet);
-    if (cardio) grid.append(cardio);
+    grid.append(num, prevCell, ...inputs, doneWrap);
   });
 
   block.append(grid);
@@ -2327,7 +2443,7 @@ function checkForPr(entry, set, numEl) {
     if (d <= 0) return;
     set.pr_distance = prev.best_distance != null && d > prev.best_distance;
     if (prev.best_distance == null || d > prev.best_distance) prev.best_distance = d;
-    hit = set.pr_distance ? `Distance PR — ${fmtMiles(d)}` : null;
+    hit = set.pr_distance ? `Distance PR — ${d.toFixed(1)} mi` : null;
   }
 
   if (hit) {
@@ -2585,58 +2701,29 @@ if (restEditorDefaultBtn) {
 // + re-render in whichever screen it was opened from.
 let setTypeEditorCtx = null;
 
-// With ctx.cardio the sheet also shows heart-rate / calorie inputs; tapping a
-// type then only selects it, and the Save button commits everything at once.
 function openSetTypeEditor(ctx) {
   setTypeEditorCtx = ctx || null;
-  const set = (ctx && ctx.set) || {};
-  selectSetTypeOption(set.set_type || "normal");
-  const cardio = !!(ctx && ctx.cardio);
-  setCardioFieldsEl.hidden = !cardio;
-  setTypeTitleEl.textContent = cardio ? "Set details" : "Set type";
-  if (cardio) {
-    setCardioAvgHr.value = set.avg_hr ?? "";
-    setCardioMaxHr.value = set.max_hr ?? "";
-    setCardioCalories.value = set.calories ?? "";
+  const current = (ctx && ctx.set && ctx.set.set_type) || "normal";
+  for (const btn of setTypeOptionBtns) {
+    btn.classList.toggle("set-type-option--selected", btn.dataset.type === current);
   }
+  setRemoveBtn.hidden = !(ctx && typeof ctx.onRemove === "function");
   openOverlay(setTypeEditorEl);
 }
-function selectSetTypeOption(type) {
-  for (const btn of setTypeOptionBtns) {
-    btn.classList.toggle("set-type-option--selected", btn.dataset.type === type);
-  }
-}
-// Parse a whole number, or null if blank / outside [min, max] (matches the
-// server's limits, so a typo can't make the autosave PUT fail).
-function intInRange(v, min, max) {
-  const n = numOrNull(parseInt(v, 10));
-  return n != null && n >= min && n <= max ? n : null;
-}
+setRemoveBtn.addEventListener("click", () => {
+  closeOverlay(setTypeEditorEl);
+  const ctx = setTypeEditorCtx;
+  if (ctx && typeof ctx.onRemove === "function") ctx.onRemove();
+});
 for (const btn of setTypeOptionBtns) {
   btn.addEventListener("click", () => {
-    const ctx = setTypeEditorCtx;
-    if (ctx && ctx.cardio) { selectSetTypeOption(btn.dataset.type); return; }
     closeOverlay(setTypeEditorEl);
+    const ctx = setTypeEditorCtx;
     if (!ctx || !ctx.set) return;
     ctx.set.set_type = btn.dataset.type;
     if (typeof ctx.onSave === "function") ctx.onSave();
   });
 }
-setCardioSaveBtn.addEventListener("click", () => {
-  closeOverlay(setTypeEditorEl);
-  const ctx = setTypeEditorCtx;
-  if (!ctx || !ctx.set) return;
-  const selected = setTypeOptionBtns.find((b) =>
-    b.classList.contains("set-type-option--selected"));
-  ctx.set.set_type = selected ? selected.dataset.type : "normal";
-  const avg = intInRange(setCardioAvgHr.value, 20, 250);
-  let max = intInRange(setCardioMaxHr.value, 20, 250);
-  if (avg != null && max != null && max < avg) max = null;
-  ctx.set.avg_hr = avg;
-  ctx.set.max_hr = max;
-  ctx.set.calories = intInRange(setCardioCalories.value, 0, 10000);
-  if (typeof ctx.onSave === "function") ctx.onSave();
-});
 if (setTypeCancelBtn) {
   setTypeCancelBtn.addEventListener("click", () => closeOverlay(setTypeEditorEl));
 }
@@ -3162,6 +3249,8 @@ async function handleSaveConflict(id, res) {
     if (typeof server.rest_seconds === "number") {
       activeWorkout.rest_seconds = server.rest_seconds;
     }
+    activeWorkout.avg_hr = server.avg_hr ?? null;
+    activeWorkout.calories = server.calories ?? null;
     if (!workoutView.hidden) renderWorkout();
   }
   workoutDirty = false;
@@ -3722,11 +3811,7 @@ function buildRoutineExerciseBlock(entry, exIndex) {
     moveBtn(1, exIndex === count - 1, () => moveRoutineExercise(exIndex, 1)),
   );
 
-  const removeEx = document.createElement("button");
-  removeEx.type = "button";
-  removeEx.className = "link-danger";
-  removeEx.textContent = "Remove";
-  removeEx.addEventListener("click", () => {
+  const removeEx = removeBtn(() => {
     editingRoutine.content.exercises.splice(exIndex, 1);
     renderRoutineEditor();
   });
@@ -3739,8 +3824,9 @@ function buildRoutineExerciseBlock(entry, exIndex) {
   restLabel.type = "button";
   restLabel.className = "exercise-rest";
   restLabel.textContent = entry.rest_seconds != null
-    ? `Rest Timer: ${fmtRest(entry.rest_seconds)}`
-    : "Rest Timer: default";
+    ? `⏱ ${fmtRest(entry.rest_seconds)}`
+    : "⏱ default";
+  restLabel.setAttribute("aria-label", "Rest timer");
   restLabel.addEventListener("click", () => {
     openRestEditor({ entry, onSave: renderRoutineEditor });
   });
@@ -3755,7 +3841,7 @@ function buildRoutineExerciseBlock(entry, exIndex) {
     withPrev: false,
     withDone: false,
   });
-  for (const label of ["SET", ...t.heads, ""]) {
+  for (const label of ["SET", ...t.heads]) {
     const cell = document.createElement("div");
     cell.className = "sets-grid-head";
     cell.textContent = label;
@@ -3769,7 +3855,14 @@ function buildRoutineExerciseBlock(entry, exIndex) {
     const badge = setTypeBadge(set);
     if (badge) num.append(badge);
     num.addEventListener("click", () => {
-      openSetTypeEditor({ set, onSave: renderRoutineEditor });
+      openSetTypeEditor({
+        set,
+        onSave: renderRoutineEditor,
+        onRemove: () => {
+          entry.sets.splice(entry.sets.indexOf(set), 1);
+          renderRoutineEditor();
+        },
+      });
     });
 
     const inputs = t.fields.map((f) => {
@@ -3784,17 +3877,7 @@ function buildRoutineExerciseBlock(entry, exIndex) {
       return inp;
     });
 
-    const removeSet = document.createElement("button");
-    removeSet.type = "button";
-    removeSet.className = "set-remove";
-    removeSet.setAttribute("aria-label", "Remove set");
-    removeSet.textContent = "✕";
-    removeSet.addEventListener("click", () => {
-      entry.sets.splice(setIndex, 1);
-      renderRoutineEditor();
-    });
-
-    grid.append(num, ...inputs, removeSet);
+    grid.append(num, ...inputs);
   });
 
   block.append(grid);
@@ -3966,7 +4049,9 @@ function buildHistoryRow(w) {
   meta.textContent =
     `${fmtDate(w.finished_at || w.started_at)}  ·  ` +
     `${w.exercise_count} exercise${w.exercise_count === 1 ? "" : "s"}  ·  ` +
-    `${w.set_count} set${w.set_count === 1 ? "" : "s"}  ·  ${fmtVolume(w.volume)}`;
+    `${w.set_count} set${w.set_count === 1 ? "" : "s"}  ·  ${fmtVolume(w.volume)}` +
+    (w.avg_hr != null ? `  ·  ♥ ${w.avg_hr}` : "") +
+    (w.calories != null ? `  ·  ${w.calories} kcal` : "");
   main.append(title, meta);
   main.addEventListener("click", () => openHistoryDetail(w.id));
 
@@ -4087,6 +4172,7 @@ async function openHistoryDetail(id) {
     : historyView.hidden ? home : historyView;
   showView(historyDetailView);
   historyDetailMetaEl.textContent = "Loading…";
+  historyDetailDetailsEl.replaceChildren();
   historyDetailExercisesEl.replaceChildren();
   try {
     const res = await authFetch(`${WORKOUTS_API}/${id}`);
@@ -4097,6 +4183,9 @@ async function openHistoryDetail(id) {
     const w = await res.json();
     historyDetailTitleEl.textContent = workoutLabel(w);
     historyDetailMetaEl.textContent = fmtDate(w.finished_at || w.started_at);
+    renderWorkoutDetails(historyDetailDetailsEl, w, {
+      onSaved: () => { loadHistory(); loadHomeHistory(); },
+    });
     renderWorkoutReadonly(historyDetailExercisesEl, w.content);
   } catch (err) {
     historyDetailMetaEl.textContent = err.message || "Could not reach the server.";
@@ -5274,7 +5363,8 @@ function renderWorkoutReadonly(container, content) {
     grid.style.gridTemplateColumns = setsGridCols(mode, {
       withPrev: false,
       withDone: false,
-    }).replace(/1\.2rem$/, "2.5rem");   // the last col is the ✓/🏆 mark
+      withTail: true,                   // the ✓/🏆 mark
+    });
     for (const label of ["SET", ...t.heads, ""]) {
       const cell = document.createElement("div");
       cell.className = "sets-grid-head";
@@ -5304,7 +5394,6 @@ function renderWorkoutReadonly(container, content) {
       mark.textContent = bits.join(" ");
 
       grid.append(num, ...cells, mark);
-      if (mode === "distance_time") grid.append(cardioLine(set));
     });
 
     block.append(grid);

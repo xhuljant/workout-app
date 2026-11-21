@@ -15,7 +15,7 @@
   <title>Workout Log</title>
   <!-- Apply a saved Light/Dark choice before first paint, so there's no flash. -->
   <script>try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
-  <link rel="stylesheet" href="/style.css?v=59" />
+  <link rel="stylesheet" href="/style.css?v=64" />
 </head>
 <body>
   <main class="card">
@@ -251,9 +251,16 @@
 
       <button id="workout-add-exercise" class="btn-dark" type="button">+ Add Exercise</button>
 
+      <!-- Optional whole-workout avg heart rate + calories (from a watch). -->
+      <div id="workout-details" class="workout-details"></div>
+
+      <!-- One row: small Discard + heart-rate/calories buttons, wide Finish. -->
       <div class="workout-actions">
+        <button id="workout-discard" class="ghost workout-action-small workout-discard" type="button"
+                aria-label="Discard workout" title="Discard workout">🗑</button>
+        <button id="workout-details-btn" class="ghost workout-action-small" type="button"
+                aria-label="Heart rate &amp; calories" title="Heart rate &amp; calories">♥</button>
         <button id="workout-finish" class="submit" type="button">Finish</button>
-        <button id="workout-discard" class="ghost workout-discard" type="button">Discard Workout</button>
       </div>
     </section>
 
@@ -385,6 +392,7 @@
         <h2 id="history-detail-title" class="subview-title">Workout</h2>
       </div>
       <p id="history-detail-meta" class="exercise-status"></p>
+      <div id="history-detail-details" class="workout-details"></div>
       <div id="history-detail-exercises" class="workout-exercises"></div>
       <button id="history-detail-share" class="ghost settings-section" type="button">Share</button>
       <button id="history-detail-delete" class="btn-danger settings-section" type="button">Delete this workout</button>
@@ -686,26 +694,14 @@
   <!-- Tag a set as normal/warm-up/drop/failure. Opened by tapping a set's number. -->
   <div id="set-type-editor" class="rest-editor" hidden>
     <div class="rest-editor-box">
-      <h3 id="set-type-title" class="rest-editor-title">Set type</h3>
+      <h3 class="rest-editor-title">Set type</h3>
       <div class="set-type-options">
         <button type="button" class="set-type-option" data-type="normal">Normal</button>
         <button type="button" class="set-type-option" data-type="warmup">Warm-up</button>
         <button type="button" class="set-type-option" data-type="dropset">Drop set</button>
         <button type="button" class="set-type-option" data-type="failure">Failure</button>
       </div>
-      <!-- Cardio sets only: heart rate + calories. Shown by openSetTypeEditor. -->
-      <div id="set-cardio-fields" class="set-cardio-fields" hidden>
-        <label>Avg HR (bpm)
-          <input id="set-cardio-avg-hr" type="text" inputmode="numeric" autocomplete="off" />
-        </label>
-        <label>Max HR (bpm)
-          <input id="set-cardio-max-hr" type="text" inputmode="numeric" autocomplete="off" />
-        </label>
-        <label>Calories (kcal)
-          <input id="set-cardio-calories" type="text" inputmode="numeric" autocomplete="off" />
-        </label>
-        <button id="set-cardio-save" class="submit" type="button">Save</button>
-      </div>
+      <button id="set-remove" class="btn-danger" type="button">Remove set</button>
       <button id="set-type-cancel" class="ghost" type="button">Cancel</button>
     </div>
   </div>
@@ -850,6 +846,6 @@
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=63"></script>
+  <script src="/app.js?v=69"></script>
 </body>
 </html>

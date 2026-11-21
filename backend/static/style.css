@@ -596,6 +596,8 @@ form > .panel:first-child { margin-top: 0; }
 .routine-move:hover:not(:disabled),
 .routine-menu:hover { border-color: var(--accent); }
 .routine-move:disabled { opacity: 0.35; cursor: default; }
+.exercise-remove { color: var(--muted); }
+.exercise-remove:hover { border-color: var(--error); color: var(--error); }
 .routine-menu { font-size: 18px; line-height: 1; }
 
 /* History rows: clickable summary + a ↻ repeat button */
@@ -1074,6 +1076,7 @@ form > .panel:first-child { margin-top: 0; }
   font-size: 16px;   /* >= 16px so iOS Safari doesn't zoom in on focus */
   resize: vertical;
 }
+.workout-notes[hidden] { display: none; }
 .workout-notes:focus {
   outline: none;
   border-color: var(--accent);
@@ -1173,20 +1176,15 @@ form > .panel:first-child { margin-top: 0; }
   cursor: pointer;
 }
 .set-done { width: 22px; height: 22px; accent-color: var(--accent); cursor: pointer; }
-.set-remove {
-  background: none;
-  border: 0;
-  padding-left: 6px;               /* keep it off the checkbox tap zone */
-  color: var(--muted);
-  font-size: 13px;
-  opacity: 0.4;
-  cursor: pointer;
-  transition: opacity 120ms ease, color 120ms ease;
-}
-.set-remove:hover,
-.set-remove:focus-visible { opacity: 1; color: var(--error); }
-
 .workout-add-set { margin-top: 10px; width: 100%; }
+
+/* ⏱ rest timer + "+ Note" side by side above the sets grid */
+.exercise-rest-row {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+.exercise-rest:hover { color: var(--text); }
 
 /* "+ Add Exercise" -- dark, secondary. Finish is the one blue button.
    The big top margin sets it apart from the last exercise card above. */
@@ -1195,9 +1193,21 @@ form > .panel:first-child { margin-top: 0; }
 
 .workout-actions {
   display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: stretch;
   gap: 10px;
   margin-top: 16px;
 }
+.workout-action-small {
+  width: 56px;
+  margin-top: 0;
+  padding: 0;
+  border-radius: 14px;
+  font-size: 20px;
+}
+#workout-details-btn { color: var(--muted); }
+#workout-details-btn:hover { color: var(--error); }
+#workout-details-btn.has-values { color: var(--error); border-color: var(--error); }
 #workout-finish {
   padding: 18px;
   font-size: 18px;
@@ -1287,16 +1297,15 @@ form > .panel:first-child { margin-top: 0; }
 
 /* Per-exercise "Rest Timer: ..." label in the workout view */
 .exercise-rest {
-  margin: 8px 0 0;
+  display: block;
+  margin: 10px 0 14px;   /* even breathing room above the sets grid */
   padding: 0;
   border: 0;
   background: none;
-  color: var(--accent);
+  color: var(--muted);   /* same grey as the SET / PREV / LBS headers */
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
 }
 
 /* Modal to change the rest-timer length for the workout */
@@ -1371,43 +1380,6 @@ form > .panel:first-child { margin-top: 0; }
   border-color: var(--accent);
   background: var(--surface-3);
 }
-
-/* Cardio details in the set editor (avg/max HR, calories) */
-.set-cardio-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  text-align: left;
-}
-.set-cardio-fields[hidden] { display: none; }
-.set-cardio-fields label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 13px;
-  color: var(--muted);
-}
-.set-cardio-fields input {
-  width: 5.5rem;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-2);
-  color: var(--text);
-  font-size: 15px;
-  text-align: center;
-}
-
-/* Pace / heart rate / calories line under a cardio set row */
-.set-cardio-line {
-  grid-column: 1 / -1;
-  margin: -2px 0 4px calc(1.7rem + 6px);
-  font-size: 11px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.set-cardio-line[hidden] { display: none; }
 
 /* --- Plate calculator (opened from the workout stats row) --- */
 .plate-calc {
@@ -2321,3 +2293,67 @@ summary:focus-visible,
     transition: none !important;
   }
 }
+
+/* Whole-workout heart rate & calories card (live workout + History detail) */
+.workout-details { margin: 14px 0 4px; }
+.workout-details:empty { display: none; }
+.workout-details-add { width: 100%; margin-top: 0; }
+.workout-details-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.workout-details-edit {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}
+.workout-details-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+.workout-details-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.workout-details-field input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 16px;   /* >= 16px stops iOS zooming on focus */
+  text-align: center;
+}
+.workout-details-error {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--error);
+}
+.workout-details-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 10px;
+}
+.workout-details-actions .ghost { margin-top: 0; }

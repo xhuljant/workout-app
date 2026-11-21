@@ -43,6 +43,14 @@ def _uuid(v):
     return uuid.UUID(str(v))
 
 
+def _int(v):
+    """A whole number from the import file, or None if missing / not numeric."""
+    try:
+        return None if v in (None, "") else int(v)
+    except (TypeError, ValueError):
+        return None
+
+
 # --- export ----------------------------------------------------------------
 
 def _workout_dict(w: Workout) -> dict:
@@ -51,6 +59,8 @@ def _workout_dict(w: Workout) -> dict:
         "routine_id": str(w.routine_id) if w.routine_id else None,
         "status": w.status,
         "rest_seconds": w.rest_seconds,
+        "avg_hr": w.avg_hr,
+        "calories": w.calories,
         "content_version": w.content_version,
         "content": w.content or {"exercises": []},
         "started_at": w.started_at.isoformat() if w.started_at else None,
@@ -202,6 +212,8 @@ def import_data(
             id=wid, user_id=uid, routine_id=routine_id,
             status=wstatus,
             rest_seconds=w.get("rest_seconds"),
+            avg_hr=_int(w.get("avg_hr")),
+            calories=_int(w.get("calories")),
             content_version=int(w.get("content_version") or 1),
             content=w.get("content") or {"exercises": []},
             started_at=_dt(w.get("started_at")) or datetime.now(timezone.utc),
