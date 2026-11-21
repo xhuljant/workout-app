@@ -143,6 +143,8 @@ def exercise_stats(
         volume = 0.0
         sess_reps = sess_seconds = 0
         sess_distance = 0.0
+        sess_hrs: list[int] = []
+        sess_calories = None
         did_something = False
 
         for entry in (w.content or {}).get("exercises", []):
@@ -161,6 +163,10 @@ def exercise_stats(
                 sess_reps += rp
                 sess_seconds += sec
                 sess_distance += dist
+                if s.get("avg_hr"):
+                    sess_hrs.append(s["avg_hr"])
+                if s.get("calories"):
+                    sess_calories = (sess_calories or 0) + s["calories"]
 
                 if wt and (top_w is None or wt > top_w):
                     top_w, top_r = wt, rp
@@ -201,6 +207,8 @@ def exercise_stats(
         stats.total_reps = (stats.total_reps or 0) + sess_reps
         stats.total_seconds = (stats.total_seconds or 0) + sess_seconds
         stats.total_distance = round((stats.total_distance or 0) + sess_distance, 2)
+        if sess_calories is not None:
+            stats.total_calories = (stats.total_calories or 0) + sess_calories
         if best_1rm is not None and (stats.best_1rm is None or best_1rm > stats.best_1rm):
             stats.best_1rm = best_1rm
         if stats.best_session_volume is None or volume > stats.best_session_volume:
@@ -215,6 +223,8 @@ def exercise_stats(
                 top_distance=top_d,
                 best_1rm=best_1rm,
                 volume=volume,
+                avg_hr=round(sum(sess_hrs) / len(sess_hrs)) if sess_hrs else None,
+                calories=sess_calories,
             )
         )
 

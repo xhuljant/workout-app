@@ -15,7 +15,7 @@
   <title>Workout Log</title>
   <!-- Apply a saved Light/Dark choice before first paint, so there's no flash. -->
   <script>try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
-  <link rel="stylesheet" href="/style.css?v=58" />
+  <link rel="stylesheet" href="/style.css?v=59" />
 </head>
 <body>
   <main class="card">
@@ -686,12 +686,25 @@
   <!-- Tag a set as normal/warm-up/drop/failure. Opened by tapping a set's number. -->
   <div id="set-type-editor" class="rest-editor" hidden>
     <div class="rest-editor-box">
-      <h3 class="rest-editor-title">Set type</h3>
+      <h3 id="set-type-title" class="rest-editor-title">Set type</h3>
       <div class="set-type-options">
         <button type="button" class="set-type-option" data-type="normal">Normal</button>
         <button type="button" class="set-type-option" data-type="warmup">Warm-up</button>
         <button type="button" class="set-type-option" data-type="dropset">Drop set</button>
         <button type="button" class="set-type-option" data-type="failure">Failure</button>
+      </div>
+      <!-- Cardio sets only: heart rate + calories. Shown by openSetTypeEditor. -->
+      <div id="set-cardio-fields" class="set-cardio-fields" hidden>
+        <label>Avg HR (bpm)
+          <input id="set-cardio-avg-hr" type="text" inputmode="numeric" autocomplete="off" />
+        </label>
+        <label>Max HR (bpm)
+          <input id="set-cardio-max-hr" type="text" inputmode="numeric" autocomplete="off" />
+        </label>
+        <label>Calories (kcal)
+          <input id="set-cardio-calories" type="text" inputmode="numeric" autocomplete="off" />
+        </label>
+        <button id="set-cardio-save" class="submit" type="button">Save</button>
       </div>
       <button id="set-type-cancel" class="ghost" type="button">Cancel</button>
     </div>
@@ -837,6 +850,6 @@
   <!-- Transient PR notification -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="/app.js?v=62"></script>
+  <script src="/app.js?v=63"></script>
 </body>
 </html>

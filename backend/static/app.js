@@ -137,6 +137,12 @@ const setTypeOptionBtns = setTypeEditorEl
   ? Array.from(setTypeEditorEl.querySelectorAll(".set-type-option"))
   : [];
 const setTypeCancelBtn = document.getElementById("set-type-cancel");
+const setTypeTitleEl = document.getElementById("set-type-title");
+const setCardioFieldsEl = document.getElementById("set-cardio-fields");
+const setCardioAvgHr = document.getElementById("set-cardio-avg-hr");
+const setCardioMaxHr = document.getElementById("set-cardio-max-hr");
+const setCardioCalories = document.getElementById("set-cardio-calories");
+const setCardioSaveBtn = document.getElementById("set-cardio-save");
 
 // Routine editor sub-view
 const newRoutineBtn = document.getElementById("new-routine");
@@ -1497,7 +1503,7 @@ function renderExerciseDetail(ex, body, stats, opts = {}) {
     weight_reps:  { key: "top_weight",   fmt: (n) => String(Math.round(n)), cap: "Top-set weight per session" },
     reps:         { key: "top_reps",     fmt: (n) => String(Math.round(n)), cap: "Top reps per session" },
     time:         { key: "top_seconds",  fmt: fmtTime, cap: "Longest time per session" },
-    distance_time:{ key: "top_distance", fmt: (n) => n.toFixed(1), cap: "Farthest distance per session" },
+    distance_time:{ key: "top_distance", fmt: (n) => toDisplayDist(n).toFixed(1), cap: "Farthest distance per session" },
   }[mode];
   if (stats.sessions.length >= 2) {
     const chart = buildExerciseChart(stats.sessions, CHART.key, CHART.fmt);
@@ -1545,6 +1551,7 @@ function renderExerciseDetail(ex, body, stats, opts = {}) {
       statTile("Longest", stats.longest_seconds == null ? "—" : fmtTime(stats.longest_seconds)),
       statTile("Total distance", fmtMiles(stats.total_distance)),
       statTile("Total time", stats.total_seconds == null ? "—" : fmtTime(stats.total_seconds)),
+      statTile("Calories", stats.total_calories == null ? "—" : `${stats.total_calories} kcal`),
       statTile("Sessions", String(stats.performed_count)),
     );
   }
@@ -1562,7 +1569,9 @@ function renderExerciseDetail(ex, body, stats, opts = {}) {
     main.textContent = `${fmtDate(s.date)}  ·  ${setSummary(
       { weight: s.top_weight, reps: s.top_reps, seconds: s.top_seconds, distance: s.top_distance },
       mode,
-    )}` + (mode === "weight_reps" ? `  ·  ${fmtVolume(s.volume)}` : "");
+    )}` + (mode === "weight_reps" ? `  ·  ${fmtVolume(s.volume)}` : "")
+      + (s.avg_hr != null ? `  ·  ♥ ${s.avg_hr}` : "")
+      + (s.calories != null ? `  ·  ${s.calories} kcal` : "");
     rowEl.append(main);
 
     if (!opts.progressOnly) {
@@ -1765,7 +1774,8 @@ const TRACKING = {
   weight_reps:  { fields: ["weight", "reps"],     heads: ["LBS", "REPS"] },
   reps:         { fields: ["reps"],               heads: ["REPS"] },
   time:         { fields: ["seconds"],            heads: ["TIME"] },
-  distance_time:{ fields: ["distance", "seconds"], heads: ["MI", "TIME"] },
+  distance_time:{ fields: ["distance", "seconds"],
+                  get heads() { return [distUnit().toUpperCase(), "TIME"]; } },
 };
 
 function trackingOf(entry) {
@@ -1812,15 +1822,28 @@ function parseTime(v) {
   return Number.isFinite(n) ? n : null;
 }
 const fmtTime = (sec) => formatDuration((Number(sec) || 0) * 1000);
-const fmtMiles = (n) => (n == null ? "–" : `${Number(n).toFixed(1)} mi`);
+// Distance is always stored in miles; it's shown (and typed) in km when the
+// user's units preference is metric.
+const MI_TO_KM = 1.609344;
+const distUnit = () => (measurementUnits() === "metric" ? "km" : "mi");
+const toDisplayDist = (mi) => (distUnit() === "km" ? mi * MI_TO_KM : mi);
+const fromDisplayDist = (d) => (distUnit() === "km" ? d / MI_TO_KM : d);
+const fmtMiles = (n) =>
+  n == null ? "–" : `${toDisplayDist(Number(n)).toFixed(1)} ${distUnit()}`;
 const fmtPace = (secPerMi) =>
-  secPerMi == null ? "–" : `${formatDuration(secPerMi * 1000)} /mi`;
+  secPerMi == null
+    ? "–"
+    : `${formatDuration(Math.round(secPerMi / toDisplayDist(1)) * 1000)} /${distUnit()}`;
 
 // Per-metric input behaviour.
 const FIELD_META = {
   weight:   { mode: "decimal", parse: (v) => numOrNull(parseFloat(v)), show: (v) => v ?? "" },
   reps:     { mode: "numeric", parse: (v) => numOrNull(parseInt(v, 10)), show: (v) => v ?? "" },
-  distance: { mode: "decimal", parse: (v) => numOrNull(parseFloat(v)), show: (v) => v ?? "" },
+  distance: {
+    mode: "decimal",
+    parse: (v) => { const n = numOrNull(parseFloat(v)); return n == null ? null : fromDisplayDist(n); },
+    show: (v) => (v == null ? "" : String(+toDisplayDist(v).toFixed(2))),
+  },
   seconds:  { mode: "numeric", parse: parseTime, show: (v) => (v == null ? "" : fmtTime(v)) },
 };
 const numOrNull = (n) => (Number.isFinite(n) ? n : null);
@@ -1836,9 +1859,37 @@ function setSummary(set, mode) {
   if (mode === "reps") return set.reps == null ? "–" : String(set.reps);
   if (mode === "time") return set.seconds == null ? "–" : fmtTime(set.seconds);
   if (set.distance == null && set.seconds == null) return "–";
-  return `${set.distance == null ? "–" : Number(set.distance).toFixed(1) + "mi"}·${
+  return `${set.distance == null ? "–" : toDisplayDist(Number(set.distance)).toFixed(1) + distUnit()}·${
     set.seconds == null ? "–" : fmtTime(set.seconds)
   }`;
+}
+
+// Secondary line under a cardio set: derived pace plus any heart-rate /
+// calorie details. "" when there's nothing to show.
+function cardioSummary(set) {
+  if (!set) return "";
+  const parts = [];
+  if (set.distance > 0 && set.seconds > 0) parts.push(fmtPace(set.seconds / set.distance));
+  if (set.avg_hr != null || set.max_hr != null) {
+    const hr = [];
+    if (set.avg_hr != null) hr.push(`${set.avg_hr} avg`);
+    if (set.max_hr != null) hr.push(`${set.max_hr} max`);
+    parts.push(`♥ ${hr.join(" / ")}`);
+  }
+  if (set.calories != null) parts.push(`${set.calories} kcal`);
+  return parts.join(" · ");
+}
+
+// Full-width row under a cardio set for cardioSummary(); hidden when empty.
+function cardioLine(set) {
+  const line = document.createElement("div");
+  line.className = "set-cardio-line";
+  line.update = () => {
+    line.textContent = cardioSummary(set);
+    line.hidden = !line.textContent;
+  };
+  line.update();
+  return line;
 }
 
 // The CSS grid-template-columns for a sets grid of a given mode.
@@ -2112,7 +2163,11 @@ function buildExerciseBlock(entry, exIndex) {
     const badge = setTypeBadge(set);
     if (badge) num.append(badge);
     num.addEventListener("click", () => {
-      openSetTypeEditor({ set, onSave: () => { renderWorkout(); scheduleSave(); } });
+      openSetTypeEditor({
+        set,
+        cardio: mode === "distance_time",
+        onSave: () => { renderWorkout(); scheduleSave(); },
+      });
     });
 
     const prevCell = document.createElement("div");
@@ -2121,6 +2176,8 @@ function buildExerciseBlock(entry, exIndex) {
       prev && prev.last_sets && prev.last_sets[setIndex],
       mode,
     );
+
+    const cardio = mode === "distance_time" ? cardioLine(set) : null;
 
     const inputs = t.fields.map((f) => {
       const meta = FIELD_META[f];
@@ -2147,6 +2204,7 @@ function buildExerciseBlock(entry, exIndex) {
       inp.addEventListener("input", () => {
         dirty = true;
         set[f] = meta.parse(inp.value);
+        if (cardio) cardio.update();
         updateWorkoutStats();
         scheduleSave();
       });
@@ -2190,6 +2248,7 @@ function buildExerciseBlock(entry, exIndex) {
     });
 
     grid.append(num, prevCell, ...inputs, doneWrap, removeSet);
+    if (cardio) grid.append(cardio);
   });
 
   block.append(grid);
@@ -2268,7 +2327,7 @@ function checkForPr(entry, set, numEl) {
     if (d <= 0) return;
     set.pr_distance = prev.best_distance != null && d > prev.best_distance;
     if (prev.best_distance == null || d > prev.best_distance) prev.best_distance = d;
-    hit = set.pr_distance ? `Distance PR — ${d.toFixed(1)} mi` : null;
+    hit = set.pr_distance ? `Distance PR — ${fmtMiles(d)}` : null;
   }
 
   if (hit) {
@@ -2526,23 +2585,58 @@ if (restEditorDefaultBtn) {
 // + re-render in whichever screen it was opened from.
 let setTypeEditorCtx = null;
 
+// With ctx.cardio the sheet also shows heart-rate / calorie inputs; tapping a
+// type then only selects it, and the Save button commits everything at once.
 function openSetTypeEditor(ctx) {
   setTypeEditorCtx = ctx || null;
-  const current = (ctx && ctx.set && ctx.set.set_type) || "normal";
-  for (const btn of setTypeOptionBtns) {
-    btn.classList.toggle("set-type-option--selected", btn.dataset.type === current);
+  const set = (ctx && ctx.set) || {};
+  selectSetTypeOption(set.set_type || "normal");
+  const cardio = !!(ctx && ctx.cardio);
+  setCardioFieldsEl.hidden = !cardio;
+  setTypeTitleEl.textContent = cardio ? "Set details" : "Set type";
+  if (cardio) {
+    setCardioAvgHr.value = set.avg_hr ?? "";
+    setCardioMaxHr.value = set.max_hr ?? "";
+    setCardioCalories.value = set.calories ?? "";
   }
   openOverlay(setTypeEditorEl);
 }
+function selectSetTypeOption(type) {
+  for (const btn of setTypeOptionBtns) {
+    btn.classList.toggle("set-type-option--selected", btn.dataset.type === type);
+  }
+}
+// Parse a whole number, or null if blank / outside [min, max] (matches the
+// server's limits, so a typo can't make the autosave PUT fail).
+function intInRange(v, min, max) {
+  const n = numOrNull(parseInt(v, 10));
+  return n != null && n >= min && n <= max ? n : null;
+}
 for (const btn of setTypeOptionBtns) {
   btn.addEventListener("click", () => {
-    closeOverlay(setTypeEditorEl);
     const ctx = setTypeEditorCtx;
+    if (ctx && ctx.cardio) { selectSetTypeOption(btn.dataset.type); return; }
+    closeOverlay(setTypeEditorEl);
     if (!ctx || !ctx.set) return;
     ctx.set.set_type = btn.dataset.type;
     if (typeof ctx.onSave === "function") ctx.onSave();
   });
 }
+setCardioSaveBtn.addEventListener("click", () => {
+  closeOverlay(setTypeEditorEl);
+  const ctx = setTypeEditorCtx;
+  if (!ctx || !ctx.set) return;
+  const selected = setTypeOptionBtns.find((b) =>
+    b.classList.contains("set-type-option--selected"));
+  ctx.set.set_type = selected ? selected.dataset.type : "normal";
+  const avg = intInRange(setCardioAvgHr.value, 20, 250);
+  let max = intInRange(setCardioMaxHr.value, 20, 250);
+  if (avg != null && max != null && max < avg) max = null;
+  ctx.set.avg_hr = avg;
+  ctx.set.max_hr = max;
+  ctx.set.calories = intInRange(setCardioCalories.value, 0, 10000);
+  if (typeof ctx.onSave === "function") ctx.onSave();
+});
 if (setTypeCancelBtn) {
   setTypeCancelBtn.addEventListener("click", () => closeOverlay(setTypeEditorEl));
 }
@@ -5210,6 +5304,7 @@ function renderWorkoutReadonly(container, content) {
       mark.textContent = bits.join(" ");
 
       grid.append(num, ...cells, mark);
+      if (mode === "distance_time") grid.append(cardioLine(set));
     });
 
     block.append(grid);

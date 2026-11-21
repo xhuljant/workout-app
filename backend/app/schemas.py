@@ -186,6 +186,11 @@ class WorkoutSet(BaseModel):
     done: bool = False
     # How this set was performed -- normal, warm-up, drop set, or taken to failure.
     set_type: SetType = "normal"
+    # Cardio details (distance_time exercises). Results, not targets, so they
+    # never carry into a fresh workout. Pace is derived client-side.
+    avg_hr: int | None = Field(default=None, ge=20, le=250)
+    max_hr: int | None = Field(default=None, ge=20, le=250)
+    calories: int | None = Field(default=None, ge=0, le=10000)
     # Set by the client when a completed set beats the user's previous best for
     # that exercise. Stored in content so History can show the 🏆 too.
     pr_weight: bool = False
@@ -357,6 +362,8 @@ class ExerciseSessionStat(BaseModel):
     top_distance: float | None = None
     best_1rm: float | None = None
     volume: float = 0.0
+    avg_hr: int | None = None      # mean of the session's set avg_hr values
+    calories: int | None = None
 
 
 class ExerciseStats(BaseModel):
@@ -379,6 +386,7 @@ class ExerciseStats(BaseModel):
     farthest_distance: float | None = None
     total_distance: float | None = None
     best_pace: float | None = None   # seconds per mile
+    total_calories: int | None = None
     sessions: list[ExerciseSessionStat] = Field(default_factory=list)
 
 

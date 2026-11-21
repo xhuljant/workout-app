@@ -89,7 +89,8 @@ def _fresh_exercises(source_exercises: list, *, keep_notes: bool) -> dict:
     """Copy an exercise list into a fresh workout body: logged numbers become
     targets, every set starts un-done, PR flags are dropped. The set's type
     (warm-up/drop/failure/normal) is part of the plan, not a logged result, so
-    it carries over like the numbers do."""
+    it carries over like the numbers do. Cardio details (avg_hr, max_hr,
+    calories) are results of that session, so they're deliberately dropped."""
     out = []
     for entry in source_exercises or []:
         out.append(
@@ -278,7 +279,8 @@ def export_history_csv(
     writer = csv.writer(buf)
     writer.writerow(
         ["date", "routine", "exercise", "tracking", "set",
-         "weight_lb", "reps", "seconds", "distance_mi", "completed", "set_type"]
+         "weight_lb", "reps", "seconds", "distance_mi", "completed", "set_type",
+         "avg_hr", "max_hr", "calories"]
     )
     cell = lambda v: v if v is not None else ""
     for w in workouts:
@@ -300,6 +302,9 @@ def export_history_csv(
                     cell(s.get("distance")),
                     "yes" if s.get("done") else "no",
                     s.get("set_type") or "normal",
+                    cell(s.get("avg_hr")),
+                    cell(s.get("max_hr")),
+                    cell(s.get("calories")),
                 ])
 
     return Response(
